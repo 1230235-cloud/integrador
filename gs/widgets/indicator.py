@@ -48,7 +48,7 @@ class IndicatorCard(QFrame):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("Card")
-        self.setMinimumHeight(92)
+        self.setMinimumHeight(84)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self._title = title

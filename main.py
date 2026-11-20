@@ -75,7 +75,7 @@ def main(argv: list | None = None) -> int:
 
     app = QApplication(sys.argv[:1] + list(argv or []))
     app.setApplicationName(APP_TITLE)
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("2.0.0")
     app.setOrganizationName("CanSat Team")
     app.setStyleSheet(theme.STYLESHEET)
 

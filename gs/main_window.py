@@ -64,8 +64,9 @@ class MainWindow(QMainWindow):
 
         self.console.append("Estación terrestre lista.", "ok", stamp=False)
         self.console.append(
-            f"Actitud: {self.attitude.backend_name}"
-            "   ·   trama: T,t,alt,temp,pres,vol,pitch,roll,yaw,state,sat,chute,packet",
+            "Actitud: " + self.attitude.backend_name
+            + "   ·   trama: T,t,alt,temp,pres,vol,pitch,roll,yaw,state,sat,chute,"
+              "packet,vel,acc,sec_dist,sec_bear",
             "info", stamp=False)
         self.scan_ports()
 
@@ -103,18 +104,23 @@ class MainWindow(QMainWindow):
         grid.setSpacing(8)
 
         self.ind_alt = IndicatorCard("ALTITUD", "m", Colors.ALT, decimals=1)
+        self.ind_vel = IndicatorCard("VELOCIDAD VERT.", "m/s", Colors.OK, decimals=2)
         self.ind_temp = IndicatorCard("TEMPERATURA", "°C", Colors.TEMP, decimals=1)
         self.ind_press = IndicatorCard("PRESIÓN", "hPa", Colors.PRESS, decimals=2)
         self.ind_volt = IndicatorCard("BATERÍA", "V", Colors.VOLT, decimals=2,
                                       warning_low=6.8)
+        self.ind_acc = IndicatorCard("ACELERACIÓN", "m/s²", Colors.WARN, decimals=2)
+        self.ind_sec = IndicatorCard("CARGA SECUNDARIA", "", Colors.INFO)
         self.ind_st = MissionClockCard(self)
-        self.ind_state = IndicatorCard("ESTADO DE MISIÓN", "", Colors.INFO)
 
         grid.addWidget(self.ind_alt, 0, 0)
-        grid.addWidget(self.ind_temp, 0, 1)
-        grid.addWidget(self.ind_press, 1, 0)
-        grid.addWidget(self.ind_volt, 1, 1)
-        grid.addWidget(self.ind_st, 2, 0, 1, 2)
+        grid.addWidget(self.ind_vel, 0, 1)
+        grid.addWidget(self.ind_temp, 1, 0)
+        grid.addWidget(self.ind_press, 1, 1)
+        grid.addWidget(self.ind_volt, 2, 0)
+        grid.addWidget(self.ind_acc, 2, 1)
+        grid.addWidget(self.ind_st, 3, 0, 1, 2)
+        grid.addWidget(self.ind_sec, 4, 0, 1, 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         layout.addWidget(indicators)
@@ -291,18 +297,33 @@ class MainWindow(QMainWindow):
     def _on_telemetry(self, telemetry) -> None:
         """Actualiza todos los instrumentos con un paquete (slot en hilo GUI)."""
         self.ind_alt.set_value(telemetry.altitude)
+        self.ind_vel.set_value(telemetry.velocity)
         self.ind_temp.set_value(telemetry.temperature)
         self.ind_press.set_value(telemetry.pressure)
         self.ind_volt.set_value(telemetry.voltage)
-        self.ind_st.set_time(telemetry.t, telemetry.state_name)
-        self.ind_state.set_text(telemetry.state_name, Colors.INFO)
+        self.ind_acc.set_value(telemetry.accel)
+
+        self._max_altitude = max(self._max_altitude, telemetry.altitude)
+        self.ind_st.set_time(
+            telemetry.t,
+            f"{telemetry.state_name} · máx {self._max_altitude:.1f} m",
+        )
+
+        if telemetry.secondary_known:
+            rumbo = (f"{telemetry.sec_bearing:.0f}°"
+                     if telemetry.sec_bearing >= 0.0 else "rumbo n/d")
+            self.ind_sec.set_text(
+                f"{telemetry.sec_distance:.1f} m  ·  {rumbo}", Colors.INFO)
+        else:
+            self.ind_sec.set_text("sin dato", Colors.TEXT_FAINT)
+
         self.attitude.set_attitude(telemetry.pitch, telemetry.roll, telemetry.yaw)
         self.plots.add_sample(telemetry)
 
-        self._max_altitude = max(self._max_altitude, telemetry.altitude)
         if self._echo:
             self.console.append(
                 f"RX T {telemetry.t:8.2f}s | alt {telemetry.altitude:7.1f} m | "
+                f"vel {telemetry.velocity:+6.2f} m/s | acc {telemetry.accel:+6.2f} m/s² | "
                 f"{telemetry.temperature:5.1f} °C | {telemetry.pressure:7.2f} hPa | "
                 f"{telemetry.voltage:4.2f} V | P{telemetry.pitch:+6.1f} "
                 f"R{telemetry.roll:+6.1f} Y{telemetry.yaw:+6.1f} | pkt {telemetry.packet}",

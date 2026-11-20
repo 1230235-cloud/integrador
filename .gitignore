@@ -8,3 +8,19 @@ __pycache__/
 grabaciones/
 *.csv
 .DS_Store
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+
+# Análisis post-vuelo
+*_procesado.csv
+*_resumen.json
+*_altura.png
+*_velocidad.png
+*_actitud.png
+
+# Pruebas
+.pytest_cache/

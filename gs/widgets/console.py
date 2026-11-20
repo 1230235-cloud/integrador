@@ -112,26 +112,28 @@ class ControlPanel(Panel):
         grid = QGridLayout()
         grid.setSpacing(8)
 
-        self.calib_btn = _button("CALIBRAR SENSOR", "Accent",
-                                 "Envía la orden de calibración de sensores "
-                                 "(offset y ganancia del IMU / barómetro)")
+        self.calib_btn = _button("CALIBRAR BARÓMETRO", "Accent",
+                                 "Fija el cero de altitud con el CanSat quieto "
+                                 "en el suelo (100 muestras)")
         self.calib_btn.clicked.connect(lambda: self._send(protocol.CMD_CALIBRATE))
         grid.addWidget(self.calib_btn, 0, 0, 1, 2)
 
-        self.inject_btn = _button("INYECCIÓN", "Warn",
-                                  "Comando de inyección (p. ej. gases de recuperación)")
-        self.inject_btn.clicked.connect(lambda: self._send(protocol.CMD_INJECTION))
-        grid.addWidget(self.inject_btn, 1, 0)
-
-        self.deploy_btn = _button("DESPLIEGUE", "Primary",
-                                  "Ordena el despliegue del conjunto de parenthood")
+        self.deploy_btn = _button("DESPLEGAR AUTOGIRO", "Primary",
+                                  "Abre el autogiro de inmediato; el desarrollo "
+                                  "automático a 200 m no se ve afectado")
         self.deploy_btn.clicked.connect(lambda: self._send(protocol.CMD_DEPLOY_PARENT))
-        grid.addWidget(self.deploy_btn, 1, 1)
+        grid.addWidget(self.deploy_btn, 1, 0)
 
-        self.chute_btn = _button("CORTAR PARACAÍDAS", "Danger",
-                                 "Corte del cable de apertura del paracaídas")
-        self.chute_btn.clicked.connect(lambda: self._send(protocol.CMD_CUT_PARACHUTE))
-        grid.addWidget(self.chute_btn, 2, 0, 1, 2)
+        self.reset_btn = _button("REINICIAR MISIÓN", "Warn",
+                                 "Vuelve a PRE conservando el cero barométrico")
+        self.reset_btn.clicked.connect(lambda: self._send(protocol.CMD_RECOVER))
+        grid.addWidget(self.reset_btn, 1, 1)
+
+        self.abort_btn = _button("ABORTAR DESPLIEGUE", "Danger",
+                                 "Cancela el despliegue automático (no recoge "
+                                 "unas palas ya abiertas)")
+        self.abort_btn.clicked.connect(lambda: self._send(protocol.CMD_CUT_PARACHUTE))
+        grid.addWidget(self.abort_btn, 2, 0, 1, 2)
 
         self.record_btn = _button("INICIAR GRABACIÓN CSV", "Primary",
                                   "Registra toda la telemetría recibida en un fichero CSV")
@@ -188,8 +190,8 @@ class ControlPanel(Panel):
 
     def set_link_active(self, active: bool) -> None:
         """Habilita los comandos solo con el enlace abierto."""
-        for button in (self.calib_btn, self.inject_btn, self.deploy_btn,
-                       self.chute_btn, self.send_btn):
+        for button in (self.calib_btn, self.deploy_btn, self.reset_btn,
+                       self.abort_btn, self.send_btn):
             button.setEnabled(active)
         self.command_edit.setEnabled(active)
         self.browse_btn.setEnabled(active or self._recording)

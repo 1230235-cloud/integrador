@@ -1,0 +1,8 @@
+# Dependencias de desarrollo (pruebas y análisis con gráficas)
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+pytest>=8.0
+numpy>=1.21
+scipy>=1.10
+matplotlib>=3.7

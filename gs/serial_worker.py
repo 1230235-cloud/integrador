@@ -6,20 +6,19 @@
 * :class:`PortScanThread` (QThread): enumera los puertos series
   disponibles (Windows COMx / Linux ttyUSBx, ttyACMx) sin congelar la UI.
 * :class:`FlightSimulator`: genera un perfil de vuelo sintético
-  (ascenso → apogeo → despliegue → descenso con paracaídas) para probar
-  la estación terrestre sin|Arduino conectado.
+  (ascenso → apogeo → despliegue → autogiro → aterrizaje) para probar
+  la estación terrestre sin CanSat conectado.
 """
 
 from __future__ import annotations
 
-import math
-import random
 import threading
 import time
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from . import protocol
+from .flight_profile import FlightProfile
 from .protocol import format_csv_row
 from .recording import CsvRecorder
 
@@ -64,76 +63,28 @@ class PortScanThread(QThread):
 
 # ------------------------------------------------------------------ simulador
 class FlightSimulator:
-    """Perfil de vuelo CanSat realista (balística + descenso con paracaídas)."""
+    """Perfil de vuelo sintético: ascenso → caída libre → autogiro → suelo.
+
+    La física vive en :mod:`gs.flight_profile` (sin Qt, verificable con
+    pruebas); esta clase solo la ancla al reloj real.
+    """
 
     def __init__(self, rate_hz: float = 10.0) -> None:
         self.rate_hz = max(1.0, rate_hz)
+        self.profile = FlightProfile()
         self.reset()
 
     def reset(self) -> None:
         self.t0 = time.monotonic()
         self.packet = 0
-        self.phase = "ascenso"
-        self._deploy_time: float | None = None
 
-    def next(self) -> str:
-        """Devuelve la siguiente trama CSV de telemetría."""
+    def next(self) -> "protocol.Telemetry":
+        """Devuelve la siguiente muestra de telemetría del perfil."""
         elapsed = time.monotonic() - self.t0
         self.packet += 1
-
-        # --- Altitud: ascenso hasta apogeo (45 s), luego caída ---------------
-        if elapsed < 45.0:
-            self.phase = "ascenso"
-            altitude = 1150.0 * (1.0 - math.exp(-elapsed / 18.0)) + 12.0 * elapsed * 0.15
-        else:
-            if self._deploy_time is None:
-                self._deploy_time = elapsed
-            self.phase = "descenso"
-            fall = elapsed - 45.0
-            if fall < 25.0:            # caída libre hasta desplegar
-                altitude = 800.0 - 12.0 * fall
-            else:                     # descenso con paracaídas (~5 m/s)
-                altitude = 500.0 - 5.0 * (fall - 25.0)
-            altitude = max(altitude, 0.0)
-
-        # --- Ambiente --------------------------------------------------------
-        pressure = 1013.25 * math.exp(-altitude / 8434.5)
-        temperature = 15.0 - 0.0065 * altitude + 1.2 * math.sin(elapsed / 30.0)
-        if self.phase == "descenso" and (elapsed - 45.0) >= 25.0:
-            temperature += 1.5  # el suelo está más caliente que la tropopausa
-
-        # --- Batería: 9 V con consumo enogee durante el vuelo ---------------
-        voltage = 9.0 - 0.9 * (1.0 - math.exp(-elapsed / 260.0)) - random.uniform(0.0, 0.02)
-        if elapsed > 300.0:
-            voltage = max(voltage - 0.002 * (elapsed - 300.0), 5.0)
-
-        # --- Actitud: cabeceo/alabeo por turbulencia + guiñada lenta --------
-        pitch = 62.0 * math.exp(-max(elapsed - 20.0, 0.0) / 12.0) + random.gauss(0.0, 1.2)
-        if self.phase == "descenso":
-            pitch = 3.0 + random.gauss(0.0, 2.5)
-        roll = 8.0 * math.sin(elapsed / 4.0) + random.gauss(0.0, 1.5)
-        yaw = (elapsed * 9.0) % 360.0
-        if self.phase == "descenso":
-            roll = 6.0 * math.sin(elapsed / 3.0) + random.gauss(0.0, 1.0)
-
-        state = 1 if self.phase == "ascenso" else 2
-        satellite = 1 if (self._deploy_time is not None and elapsed - 45.0 > 6.0) else 0
-        chute = 1 if (self._deploy_time is not None and elapsed - 45.0 > 25.0) else 0
-
-        return protocol.Telemetry(
-            t=elapsed,
-            altitude=altitude,
-            temperature=temperature,
-            pressure=pressure,
-            voltage=voltage,
-            pitch=pitch,
-            roll=roll,
-            yaw=yaw,
-            state=state,
-            satellite=satellite,
-            chute=chute,
-            packet=self.packet,
-        )
+        telemetry = self.profile.sample(elapsed)
+        telemetry.packet = self.packet
+        return telemetry
 
 
 # ----------------------------------------------------------------- hilo lector
@@ -179,7 +130,7 @@ class SerialWorker(QThread):
             self._simulation = port == SIM_TAG
 
     def send_command(self, command: str) -> None:
-        """Encola un comando para enviar al|Arduino (o simulación)."""
+        """Encola un comando para enviar al CanSat (o simulación)."""
         with self._port_lock:
             self._outbox.append(command)
 
@@ -279,15 +230,25 @@ class SerialWorker(QThread):
     # ------------------------------------------------------------- auxiliares
     @staticmethod
     def _split_frame(buffer: bytes):
-        """Extrae una trama delimitada por \\r o \\n. Devuelve (linea, resto)."""
-        for sep in (b"\n", b"\r"):
-            index = buffer.find(sep)
-            if index != -1:
-                line = buffer[:index]
-                rest = buffer[index + 1:]
-                if not line.strip():
-                    return None, rest          # línea vacía: sigue
-                return line, rest
+        """Extrae una trama delimitada por \\r o \\n. Devuelve (linea, resto).
+
+        Las líneas vacías se descartan sin cortar el bucle, de modo que un
+        ``\\r\\n`` o un salto suelto no bloquea las tramas siguientes.
+        """
+        while buffer:
+            candidatos = [(buffer.find(sep), sep) for sep in (b"\n", b"\r")]
+            candidatos = [(i, sep) for i, sep in candidatos if i != -1]
+            if not candidatos:
+                return None, buffer
+            index, sep = min(candidatos)
+            line = buffer[:index]
+            rest = buffer[index + 1:]
+            if sep == b"\r" and rest.startswith(b"\n"):
+                rest = rest[1:]
+            if not line.strip():
+                buffer = rest
+                continue
+            return line, rest
         return None, buffer
 
     def _handle_line(self, raw: bytes) -> None:
@@ -314,7 +275,7 @@ class SerialWorker(QThread):
                 self.log.emit(f"RX ?? {text}", "warn")
             return
 
-        # Control de paquetes perdidos (contador monotónico del|Arduino)
+        # Control de paquetes perdidos (contador monotónico del CanSat)
         if telemetry.packet > 0:
             if self._last_packet and telemetry.packet > self._last_packet + 1:
                 self._lost += telemetry.packet - self._last_packet - 1
@@ -327,7 +288,7 @@ class SerialWorker(QThread):
         self._flush_pending()
 
     def _flush_pending(self) -> None:
-        """Vacía la cola de comandos hacia el|Arduino."""
+        """Vacía la cola de comandos hacia el CanSat."""
         with self._port_lock:
             pending, self._outbox = self._outbox, []
         for command in pending:
