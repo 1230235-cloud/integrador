@@ -11,10 +11,46 @@ from __future__ import annotations
 import csv
 import json
 import os
+import shutil
 import threading
 import time
 
 from .protocol import CSV_HEADER, format_csv_row, telemetry_to_dict
+
+ARCHIVE_SUBDIR = "historial"
+RECORDING_SUFFIXES = (".csv", ".jsonl", ".report.json", "_reporte.html", "_reporte.pdf")
+
+
+def archive_previous_recordings(directory: str) -> int:
+    """Mueve grabaciones anteriores del directorio activo hacia ``historial/``.
+
+    Garantiza que la carpeta activa contenga únicamente el vuelo más reciente
+    sin borrar ni sobrescribir pruebas previas.
+    """
+    if not directory or not os.path.isdir(directory):
+        return 0
+
+    archive_dir = os.path.join(directory, ARCHIVE_SUBDIR)
+    moved = 0
+    for entry in os.listdir(directory):
+        src = os.path.join(directory, entry)
+        if not os.path.isfile(src):
+            continue
+        if not entry.lower().endswith(RECORDING_SUFFIXES):
+            continue
+
+        os.makedirs(archive_dir, exist_ok=True)
+        dst = os.path.join(archive_dir, entry)
+        if os.path.exists(dst):
+            stem, ext = os.path.splitext(entry)
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            dst = os.path.join(archive_dir, f"{stem}_{stamp}{ext}")
+        try:
+            shutil.move(src, dst)
+            moved += 1
+        except OSError:
+            pass
+    return moved
 
 
 class CsvRecorder:
@@ -58,10 +94,14 @@ class CsvRecorder:
             return self._rows
 
     def start(self, path: str, header: str = CSV_HEADER) -> bool:
-        """Abre CSV + JSONL y prepara el buffer para el paquete ``.report.json``."""
+        """Archiva vuelos previos, abre CSV + JSONL y prepara ``.report.json``."""
         with self._lock:
             if self._file is not None:
                 return False
+            directory = os.path.dirname(os.path.abspath(path))
+            os.makedirs(directory, exist_ok=True)
+            archive_previous_recordings(directory)
+
             base, _ = os.path.splitext(path)
             jsonl_path = base + ".jsonl"
             report_path = base + ".report.json"

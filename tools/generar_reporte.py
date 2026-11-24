@@ -340,16 +340,40 @@ def write_pdf_report(out_pdf: str, data: dict[str, Any],
             pdf.savefig(fig)
 
 
+def _find_latest_recording(folder: str = "grabaciones") -> str:
+    """Encuentra automáticamente la grabación activa en ``grabaciones/``."""
+    if not os.path.isdir(folder):
+        raise FileNotFoundError(f"No existe la carpeta '{folder}'.")
+    for suffix in (".report.json", ".csv"):
+        candidates = [
+            os.path.join(folder, name)
+            for name in os.listdir(folder)
+            if name.endswith(suffix) and os.path.isfile(os.path.join(folder, name))
+        ]
+        if candidates:
+            candidates.sort(key=os.path.getmtime, reverse=True)
+            return candidates[0]
+    raise FileNotFoundError(
+        f"No se encontró ningún .report.json ni .csv activo en '{folder}/'."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Convierte un .report.json o .csv de CanSat en reporte HTML y PDF con gráficas."
     )
-    parser.add_argument("archivo", help="Ruta al archivo .report.json o .csv grabado")
+    parser.add_argument(
+        "archivo",
+        nargs="?",
+        default=None,
+        help="Ruta al .report.json o .csv (si se omite, usa automáticamente el último en grabaciones/)",
+    )
     parser.add_argument("--logo", default=DEFAULT_LOGO, help="Ruta a la insignia PNG del equipo")
     args = parser.parse_args(argv)
 
-    data = load_flight_data(args.archivo)
-    base = args.archivo
+    target = args.archivo or _find_latest_recording("grabaciones")
+    data = load_flight_data(target)
+    base = target
     for suffix in (".report.json", ".json", ".csv"):
         if base.endswith(suffix):
             base = base[: -len(suffix)]
