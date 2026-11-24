@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QKeySequence
+from PyQt5.QtGui import QKeySequence, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -101,6 +102,8 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        layout.addWidget(self._build_team_banner())
+
         self.connection = ConnectionPanel(self)
         layout.addWidget(self.connection)
 
@@ -135,6 +138,43 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
         column.setFixedWidth(392)
         return column
+
+    def _build_team_banner(self) -> QFrame:
+        """Cabecera con la insignia del equipo Pepe el Pollo."""
+        banner = QFrame(self)
+        banner.setObjectName("Panel")
+        row = QHBoxLayout(banner)
+        row.setContentsMargins(10, 8, 12, 8)
+        row.setSpacing(12)
+
+        logo_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "docs",
+            "insignia-pepe-el-pollo.png",
+        )
+        logo_lbl = QLabel(banner)
+        logo_lbl.setFixedSize(52, 52)
+        logo_lbl.setAlignment(Qt.AlignCenter)
+        if os.path.exists(logo_path):
+            pix = QPixmap(logo_path).scaled(
+                52, 52, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            logo_lbl.setPixmap(pix)
+        row.addWidget(logo_lbl)
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(2)
+        title = QLabel("PEPE EL POLLO", banner)
+        title.setStyleSheet(
+            f"font-size: 15px; font-weight: bold; letter-spacing: 1px; color: {Colors.TEXT};"
+        )
+        subtitle = QLabel("CanSat · Estación Terrestre · FITEC", banner)
+        subtitle.setStyleSheet(f"font-size: 11px; color: {Colors.ACCENT};")
+        text_col.addWidget(title)
+        text_col.addWidget(subtitle)
+        row.addLayout(text_col, 1)
+        return banner
 
     def _build_right_area(self) -> QWidget:
         splitter = QSplitter(Qt.Vertical, self)

@@ -110,17 +110,21 @@ class ControlPanel(Panel):
         super().__init__("CONTROL DE MISIÓN", parent)
         self._recording = False
 
-        # Menú desplegable unificado para comandos de misión y grabación
+        # Fila compacta: menú desplegable de acciones + botón dedicado de grabación
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
+
         self.menu_btn = _button(
-            "ACCIONES DE MISIÓN  ▾",
+            "ACCIONES  ▾",
             "Accent",
-            "Abre el menú de calibración, despliegue, reinicio y grabación",
+            "Comandos de calibración, despliegue, reinicio y ruta de exportación",
         )
+        self.menu_btn.setFixedHeight(32)
         self.menu = QMenu(self)
         self.menu.setStyleSheet(
             f"QMenu {{ background: {Colors.BG_PANEL}; color: {Colors.TEXT}; "
-            f"border: 1px solid {Colors.BORDER}; padding: 6px; font-size: 12px; }}"
-            f"QMenu::item {{ padding: 7px 18px; border-radius: 4px; }}"
+            f"border: 1px solid {Colors.BORDER}; padding: 4px; font-size: 12px; }}"
+            f"QMenu::item {{ padding: 6px 14px; border-radius: 4px; }}"
             f"QMenu::item:selected {{ background: {Colors.BG_WIDGET}; color: {Colors.ACCENT}; }}"
             f"QMenu::item:disabled {{ color: {Colors.TEXT_FAINT}; }}"
             f"QMenu::separator {{ height: 1px; background: {Colors.BORDER}; margin: 4px 8px; }}"
@@ -144,16 +148,23 @@ class ControlPanel(Panel):
 
         self.menu.addSeparator()
 
-        self.action_record = QAction("Iniciar grabación (CSV + JSONL + Reporte)", self)
-        self.action_record.triggered.connect(self._toggle_recording)
-        self.menu.addAction(self.action_record)
-
         self.action_browse = QAction("Elegir ruta de exportación…", self)
         self.action_browse.triggered.connect(self._browse)
         self.menu.addAction(self.action_browse)
 
         self.menu_btn.setMenu(self.menu)
-        self.body.addWidget(self.menu_btn)
+        top_row.addWidget(self.menu_btn, 1)
+
+        self.record_btn = _button(
+            "● GRABAR",
+            "Primary",
+            "Inicia o detiene la grabación (CSV + JSONL + Reporte JSON)",
+        )
+        self.record_btn.setFixedHeight(32)
+        self.record_btn.clicked.connect(self._toggle_recording)
+        top_row.addWidget(self.record_btn, 1)
+
+        self.body.addLayout(top_row)
 
         self.path_label = QLabel("Exportación: sin grabación activa", self)
         self.path_label.setObjectName("Hint")
@@ -205,17 +216,11 @@ class ControlPanel(Panel):
         self.action_browse.setEnabled(active or self._recording)
 
     def set_recording(self, recording: bool, path: str = "") -> None:
-        """Refleja el estado de la grabación en el menú y la etiqueta."""
+        """Refleja el estado de la grabación en el botón dedicado y la etiqueta."""
         self._recording = recording
-        self.action_record.setText(
-            "Detener grabación y generar paquete de reporte"
-            if recording else "Iniciar grabación (CSV + JSONL + Reporte)"
-        )
-        self.menu_btn.setText(
-            "● GRABANDO · ACCIONES  ▾" if recording else "ACCIONES DE MISIÓN  ▾"
-        )
-        self.menu_btn.setObjectName("Danger" if recording else "Accent")
-        _restyle(self.menu_btn)
+        self.record_btn.setText("■ DETENER" if recording else "● GRABAR")
+        self.record_btn.setObjectName("Danger" if recording else "Primary")
+        _restyle(self.record_btn)
         self.path_label.setText(
             f"Exportando: {path}" if path else "Exportación: sin grabación activa"
         )
