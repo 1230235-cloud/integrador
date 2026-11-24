@@ -28,7 +28,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
-DEPLOY_TARGET_M = 200.0
+DEPLOY_TARGET_M = 24.0
 DEFAULT_LOGO = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "docs",
@@ -149,7 +149,7 @@ def build_figures(data: dict[str, Any]) -> list[tuple[str, plt.Figure]]:
     fig1, ax1 = plt.subplots(figsize=(9.5, 4.2), dpi=180)
     ax1.plot(t, alt, color="#0284c7", linewidth=2.0, label="Altitud (m)")
     ax1.axhline(DEPLOY_TARGET_M, color="#d97706", linestyle="--", linewidth=1.3,
-                label="Objetivo despliegue (200 m)")
+                label=f"Objetivo despliegue ({DEPLOY_TARGET_M:.0f} m)")
     if alt:
         idx_max = alt.index(max(alt))
         ax1.scatter([t[idx_max]], [alt[idx_max]], color="#16a34a", zorder=5,

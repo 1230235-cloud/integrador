@@ -96,7 +96,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 
 <section class="panels">
   <div class="panel">
-    <h2><span>PERFIL DE ALTITUD (LÍNEA 200 m)</span><span id="v-state">PRE-LANZAMIENTO</span></h2>
+    <h2><span>PERFIL DE ALTITUD (LÍNEA 24 m)</span><span id="v-state">PRE-LANZAMIENTO</span></h2>
     <canvas id="chart"></canvas>
   </div>
   <div class="panel">
@@ -107,7 +107,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 
 <script>
 const STATES = ["PRE-LANZAMIENTO","ASCENSO","DESCENSO","ATERRIZAJE","FIN DE MISIÓN"];
-const DEPLOY_LIMIT_M = 200.0;
+const DEPLOY_LIMIT_M = 24.0;
 const history = [];
 let maxAlt = 0;
 let latest = {pitch:0, roll:0, yaw:0, decoupled:false};
@@ -126,22 +126,22 @@ function drawChart(){
 
   const pad = {l:42, r:12, t:14, b:22};
   const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
-  const maxY = Math.max(250, ...history.map(p => p.alt)) * 1.1;
+  const maxY = Math.max(35, ...history.map(p => p.alt)) * 1.15;
 
   // Rejilla
-  ctx.strokeStyle = "#1e2e42"; ctx.lineWidth = 1;
-  ctx.fillStyle = "#7a90a8"; ctx.font = "11px monospace";
+  ctx.strokeStyle = "#22364d"; ctx.lineWidth = 1;
+  ctx.fillStyle = "#8ea4bc"; ctx.font = "11px monospace";
   for(let i=0;i<=4;i++){
     const y = pad.t + ph * (i/4);
     ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w-pad.r, y); ctx.stroke();
     ctx.fillText((maxY*(1-i/4)).toFixed(0)+"m", 4, y+4);
   }
 
-  // Línea de despliegue 200 m
-  const y200 = pad.t + ph * (1 - DEPLOY_LIMIT_M / maxY);
-  ctx.save(); ctx.setLineDash([5,4]); ctx.strokeStyle = "#f59e0b";
-  ctx.beginPath(); ctx.moveTo(pad.l, y200); ctx.lineTo(w-pad.r, y200); ctx.stroke();
-  ctx.fillStyle = "#f59e0b"; ctx.fillText("200m", w-pad.r-34, y200-4);
+  // Línea de despliegue 24 m
+  const y24 = pad.t + ph * (1 - DEPLOY_LIMIT_M / maxY);
+  ctx.save(); ctx.setLineDash([5,4]); ctx.strokeStyle = "#c98a42";
+  ctx.beginPath(); ctx.moveTo(pad.l, y24); ctx.lineTo(w-pad.r, y24); ctx.stroke();
+  ctx.fillStyle = "#c98a42"; ctx.fillText("24m", w-pad.r-30, y24-4);
   ctx.restore();
 
   if(history.length < 2) return;

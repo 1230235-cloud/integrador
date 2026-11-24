@@ -39,14 +39,14 @@ ESCALA_BAROMETRICA = 8434.5
 
 @dataclass(frozen=True)
 class MissionConfig:
-    """Parámetros del perfil. Los valores por defecto son la misión real."""
+    """Parámetros del perfil (prueba de caída desde 30 m con despliegue a 24 m)."""
 
-    alt_suelta: float = 450.0
-    alt_despliegue: float = 200.0
-    v_ascenso: float = 5.0
+    alt_suelta: float = 30.0
+    alt_despliegue: float = 24.0
+    v_ascenso: float = 3.0
     v_autogiro: float = 4.7
     v_terminal_libre: float = 41.0
-    t_post_aterrizaje: float = 30.0
+    t_post_aterrizaje: float = 12.0
     presion_suelo_hpa: float = 1013.25
     temp_suelo_c: float = 24.0
     bateria_inicial_v: float = 8.40

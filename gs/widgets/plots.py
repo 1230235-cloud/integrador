@@ -28,10 +28,10 @@ from .connection import Panel
 
 #: Máximo de muestras retenidas por canal.
 MAX_SAMPLES = 1500
-#: Intervalo mínimo (s) entre muestras dibujadas.
-SAMPLE_DT = 0.25
-#: Altitud nominal de apertura del autogiro (m).
-ALT_DESPLEGUE = 200.0
+#: Intervalo mínimo (s) entre muestras dibujadas (25 Hz para caída de 2.5 s).
+SAMPLE_DT = 0.04
+#: Altitud nominal de apertura del autogiro (m, perfil de prueba 30 m).
+ALT_DESPLEGUE = 24.0
 
 
 class TelemetryPlots(Panel):
@@ -60,7 +60,7 @@ class TelemetryPlots(Panel):
         self.alt_curve = self.alt_plot.plot(
             pen=pg.mkPen(Colors.ALT, width=2),
             fillLevel=0,
-            brush=pg.mkBrush(0, 212, 255, 26),
+            brush=pg.mkBrush(98, 146, 196, 32),
         )
         self.deploy_line = pg.InfiniteLine(
             pos=ALT_DESPLEGUE, angle=0,
@@ -69,7 +69,7 @@ class TelemetryPlots(Panel):
             labelOpts={"position": 0.05, "color": Colors.WARN},
         )
         self.alt_plot.addItem(self.deploy_line)
-        self.alt_plot.setYRange(0, 500, padding=0.08)
+        self.alt_plot.setYRange(0, 35, padding=0.08)
         self.alt_plot.setMouseEnabled(x=True, y=False)
         self.alt_markers = pg.ScatterPlotItem(
             size=5, pen=pg.mkPen(Colors.ALT), brush=pg.mkBrush(Colors.ALT)

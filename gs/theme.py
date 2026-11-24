@@ -4,31 +4,32 @@ from __future__ import annotations
 
 
 class Colors:
-    """Paleta central de la aplicación (dark azul metálico aerospacial)."""
+    """Paleta central de la aplicación (metal forjado azul acero + bronce de la insignia)."""
 
-    BG_DEEP = "#080e17"        # fondo de ventana
-    BG_PANEL = "#0f1826"       # fondo de panel
-    BG_WIDGET = "#152234"      # fondo de widget/input
-    BG_HEADER = "#1b2b42"      # cabeceras y barras metálicas
-    BORDER = "#2a415e"         # borde acero azulado
-    BORDER_FOCUS = "#5b9bd5"   # foco azul acero
+    BG_DEEP = "#090f18"        # fondo de ventana azul noche
+    BG_PANEL = "#111b2a"       # acero oscuro de panel
+    BG_WIDGET = "#172538"      # acero cepillado de tarjetas/inputs
+    BG_HEADER = "#1e3048"      # barra metálica superior
+    BORDER = "#3d5875"         # borde metálico plateado-azulado (juego con insignia)
+    BORDER_LIGHT = "#5d7ea1"   # bisel metálico superior
+    BORDER_FOCUS = "#c9853e"   # foco bronce/cobre de la insignia
 
-    TEXT = "#dde7f2"
-    TEXT_DIM = "#8ea4bc"
-    TEXT_FAINT = "#5c728a"
+    TEXT = "#e6eef6"           # plata metálica clara
+    TEXT_DIM = "#9bb0c7"       # acero claro
+    TEXT_FAINT = "#667e99"
 
-    ACCENT = "#5b9bd5"         # azul metálico principal
-    ACCENT_2 = "#7e8ec4"       # acero lavanda apagado
-    OK = "#2e9e6e"             # verde esmeralda sobrio
-    WARN = "#c89643"           # ámbar metálico suave
-    ERROR = "#c4525a"          # rojo carmesí sobrio
-    INFO = "#4c89bf"
+    ACCENT = "#6fa0ce"         # azul acero cepillado
+    ACCENT_2 = "#8a99c7"       # titanio lavanda
+    OK = "#358f6a"             # verde técnico sobrio
+    WARN = "#c9853e"           # cobre/bronce metálico de la insignia
+    ERROR = "#b84c54"          # carmesí metálico sobrio
+    INFO = "#5b8ec2"
 
-    ALT = "#63a4db"
-    TEMP = "#cf8453"
-    PRESS = "#868ec9"
-    VOLT = "#3ea87b"
-    PITCH = "#c89643"
+    ALT = "#72a6d8"
+    TEMP = "#cf8448"
+    PRESS = "#8b97cc"
+    VOLT = "#48a37b"
+    PITCH = "#cf8e48"
 
 
 #: Tamaño de fuente base y família monoespaciada para lecturas numéricas.
@@ -55,29 +56,34 @@ QLabel {{
 }}
 
 QFrame#Panel {{
-    background-color: {Colors.BG_PANEL};
-    border: 1px solid {Colors.BORDER};
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #162438, stop:0.12 {Colors.BG_PANEL}, stop:1 #0d1522);
+    border: 1.5px solid {Colors.BORDER};
+    border-top-color: {Colors.BORDER_LIGHT};
     border-radius: 10px;
 }}
 
 QFrame#Card {{
-    background-color: {Colors.BG_WIDGET};
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #1d2e45, stop:1 {Colors.BG_WIDGET});
     border: 1px solid {Colors.BORDER};
+    border-top-color: {Colors.BORDER_LIGHT};
     border-radius: 8px;
 }}
 
 QFrame#Header {{
-    background-color: {Colors.BG_HEADER};
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #263c59, stop:1 {Colors.BG_HEADER});
     border: none;
-    border-bottom: 1px solid {Colors.BORDER};
+    border-bottom: 1.5px solid {Colors.BORDER};
     border-radius: 0px;
 }}
 
 QLabel#PanelTitle {{
-    color: {Colors.ACCENT};
-    font-size: 12px;
+    color: {Colors.TEXT};
+    font-size: 11px;
     font-weight: bold;
-    letter-spacing: 2px;
+    letter-spacing: 2.2px;
     padding: 8px 10px 6px 10px;
     background: transparent;
     border: none;
@@ -147,66 +153,91 @@ QComboBox QAbstractItemView {{
     outline: none;
 }}
 
-/* ---------- Botones ---------- */
+/* ---------- Botones (acero cepillado con bisel metálico) ---------- */
 QPushButton {{
-    background-color: {Colors.BG_HEADER};
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #2c4360, stop:0.5 #1f324a, stop:1 #18273a);
     border: 1px solid {Colors.BORDER};
+    border-top-color: {Colors.BORDER_LIGHT};
     border-radius: 6px;
-    padding: 7px 12px;
+    padding: 6px 12px;
     font-weight: bold;
+    letter-spacing: 0.7px;
     color: {Colors.TEXT};
 }}
 
 QPushButton:hover {{
-    background-color: #24344a;
-    border-color: {Colors.ACCENT};
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #375375, stop:1 #223854);
+    border-color: {Colors.BORDER_LIGHT};
 }}
 
 QPushButton:pressed {{
-    background-color: #16202c;
+    background: #142233;
+    border-color: {Colors.BORDER};
 }}
 
 QPushButton:disabled {{
     color: {Colors.TEXT_FAINT};
-    background-color: #121924;
-    border-color: #1b242f;
+    background: #121b28;
+    border-color: #203044;
 }}
 
 QPushButton#Primary {{
-    background-color: {Colors.OK};
-    color: #f0f8f4;
-    border: 1px solid #3bb380;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #3fa67c, stop:0.5 {Colors.OK}, stop:1 #276e51);
+    color: #f2faf6;
+    border: 1px solid #4fc293;
+    border-top-color: #74d9ae;
 }}
 
-QPushButton#Primary:hover {{ background-color: #37b07c; }}
-QPushButton#Primary:disabled {{ background-color: #19382b; color: #678075; border-color: #204535; }}
+QPushButton#Primary:hover {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #4ab88b, stop:1 #2f8260);
+}}
+QPushButton#Primary:disabled {{ background: #19362a; color: #678075; border-color: #224737; }}
 
 QPushButton#Danger {{
-    background-color: {Colors.ERROR};
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #cc5c64, stop:0.5 {Colors.ERROR}, stop:1 #8f383f);
     color: #fdf2f3;
-    border: 1px solid #d4666e;
+    border: 1px solid #d9737a;
+    border-top-color: #e69399;
 }}
 
-QPushButton#Danger:hover {{ background-color: #d4636b; }}
-QPushButton#Danger:disabled {{ background-color: #421f24; color: #8a6a70; border-color: #4f262c; }}
+QPushButton#Danger:hover {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #d96a72, stop:1 #a14149);
+}}
+QPushButton#Danger:disabled {{ background: #3f1f24; color: #8a6a70; border-color: #4f282e; }}
 
 QPushButton#Accent {{
-    background-color: {Colors.ACCENT};
-    color: #f2f7fc;
-    border: 1px solid #72aee3;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #4c7ba8, stop:0.5 #38628a, stop:1 #294b6b);
+    color: #eef5fc;
+    border: 1px solid #6b9bc7;
+    border-top-color: #8cb7de;
 }}
 
-QPushButton#Accent:hover {{ background-color: #6ea9de; }}
-QPushButton#Accent:disabled {{ background-color: #1a3047; color: #637e99; border-color: #223c57; }}
+QPushButton#Accent:hover {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #5b8cb9, stop:1 #335c82);
+}}
+QPushButton#Accent:disabled {{ background: #1a2e42; color: #637e99; border-color: #253d54; }}
 
 QPushButton#Warn {{
-    background-color: {Colors.WARN};
-    color: #1a1200;
-    border: 1px solid #d6a758;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #d9974d, stop:0.5 {Colors.WARN}, stop:1 #9e662b);
+    color: #fff8f0;
+    border: 1px solid #e0a865;
+    border-top-color: #edc08a;
 }}
 
-QPushButton#Warn:hover {{ background-color: #d6a656; }}
-QPushButton#Warn:disabled {{ background-color: #45361a; color: #8a7a5c; border-color: #524020; }}
+QPushButton#Warn:hover {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #e3a359, stop:1 #b07332);
+}}
+QPushButton#Warn:disabled {{ background: #45331a; color: #8a7a5c; border-color: #543e21; }}
 
 /* ---------- Casillas / radios ---------- */
 QCheckBox, QRadioButton {{
