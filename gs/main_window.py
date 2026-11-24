@@ -528,34 +528,40 @@ class SpinningBadge3D(QWidget):
         cos_a = math.cos(rad)
         sin_a = math.sin(rad)
 
-        # Escala horizontal proyectada + espesor de moneda en los cantos
-        scale_x = max(0.06, abs(cos_a))
+        # Escala horizontal con signo para giro completo 360° (frente y dorso)
+        signed_scale_x = cos_a if abs(cos_a) >= 0.05 else (0.05 if cos_a >= 0 else -0.05)
+        abs_scale_x = abs(signed_scale_x)
         draw_w = self._size
         draw_h = self._size
         target = QRectF(-draw_w / 2.0, -draw_h / 2.0, draw_w, draw_h)
 
-        # 1. Capas de canto metálico (profundidad 3D al girar de perfil)
-        depth_px = 4.2 * abs(sin_a)
+        # 1. Capas de canto metálico (profundidad 3D real durante los 360°)
+        depth_px = 4.6 * abs(sin_a)
         side_dir = -1.0 if sin_a >= 0 else 1.0
         for layer in range(4, 0, -1):
             offset_x = side_dir * depth_px * (layer / 4.0)
             painter.save()
             painter.translate(cx + offset_x, cy)
             tf = QTransform()
-            tf.scale(scale_x, 1.0)
+            tf.scale(abs_scale_x, 1.0)
             painter.setTransform(tf, True)
             painter.drawPixmap(target, self._edge_pixmap, QRectF(self._edge_pixmap.rect()))
             painter.restore()
 
-        # 2. Cara principal con el arte original íntegro (legible en ambos lados)
+        # 2. Cara visible (frente para cos >= 0, dorso espejado para cos < 0)
         painter.save()
         painter.translate(cx, cy)
         tf = QTransform()
-        tf.scale(scale_x, 1.0)
+        tf.scale(signed_scale_x, 1.0)
         painter.setTransform(tf, True)
         painter.drawPixmap(target, self._pixmap, QRectF(self._pixmap.rect()))
 
-        # 3. Reflejo metálico sutil al cruzar el ángulo frontal
+        # Sombreado sutil en el dorso para reforzar la percepción del giro 360°
+        if cos_a < 0:
+            painter.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+            painter.fillRect(target, QColor(8, 16, 28, 55))
+
+        # 3. Reflejo metálico que barre la superficie al girar
         sheen = max(0.0, abs(cos_a) - 0.55) / 0.45
         if sheen > 0.01:
             grad = QLinearGradient(QPointF(-draw_w / 2.0, -draw_h / 2.0),
