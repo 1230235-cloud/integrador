@@ -58,7 +58,8 @@ Sistema completo de vuelo y telemetría para el proyecto integrador **CanSat (PE
 - **[`gs/protocol.py`](gs/protocol.py)**: Define la estructura `Telemetry`, el parser tolerante `parse_telemetry()` (admite tramas de 13, 16 o 18 campos con `rssi` y `snr`, saneando `NaN`/infinitos), `format_csv_row()` y `telemetry_to_dict()`.
 - **[`gs/serial_worker.py`](gs/serial_worker.py)**: Hilo `QThread` dedicado para lectura serie no bloqueante, cálculo de paquetes perdidos/cadencia y ejecución del simulador de vuelo.
 - **[`gs/flight_profile.py`](gs/flight_profile.py)**: Modelo físico determinista del vuelo sintético (ascenso a 450 m, caída libre, autogiro a 200 m, aterrizaje y simulación de RSSI/SNR).
-- **[`gs/recording.py`](gs/recording.py)**: Grabador thread-safe (`CsvRecorder`) que escribe simultáneamente el registro en **CSV** y su espejo estructurado en **JSONL**.
+- **[`gs/recording.py`](gs/recording.py)**: Grabador thread-safe (`CsvRecorder`) que escribe simultáneamente en **CSV**, respaldo **JSONL** y un paquete estructurado **`.report.json`** listo para generar informes con gráficas.
+- **[`tools/generar_reporte.py`](tools/generar_reporte.py)**: Convierte cualquier `.report.json` o `.csv` grabado en un reporte entregable **HTML** (autocontenido con insignia y tabla KPI) y **PDF** con las 5 gráficas de misión (altitud, velocidad/aceleración, temperatura/presión, orientación y batería/RSSI).
 - **[`gs/widgets/attitude.py`](gs/widgets/attitude.py)**: Visor **OpenGL 3D** (`Satellite3DView`) del CanSat de 2 etapas (primaria azul + secundaria ámbar + 3 palas de autogiro) con animación de desacoplamiento y giro del rotor cuando `chute == 1`, `satellite == 1` o al cruzar `200 m` en descenso. Incluye horizonte artificial 2D como respaldo.
 - **[`gs/web_mirror.py`](gs/web_mirror.py)**: Servidor HTTP + Server-Sent Events (`WebMirrorServer`) con librería estándar de Python y dashboard HTML5/Canvas autocontenido (**sin internet ni CDNs**), permitiendo ver telemetría, gráfica de altitud y CanSat 3D desde cualquier tablet en la misma red Wi-Fi o hotspot local.
 - **[`gs/main_window.py`](gs/main_window.py)**: Dashboard principal PyQt5 (conexión, tarjetas de indicadores, gráficas en vivo, actitud 3D, consola de eventos, barra de estado con `RSSI/SNR` y controles de misión).
@@ -107,6 +108,9 @@ python3 main.py --sim
 
 # Modo real (receptor Heltec RX conectado por USB)
 python3 main.py --port /dev/ttyUSB0 --baud 115200
+
+# Generar reporte HTML + PDF con gráficas tras grabar un vuelo
+python3 tools/generar_reporte.py grabaciones/cansat.report.json
 ```
 
 Al iniciar, la consola muestra la URL local del espejo para tablet (por ejemplo `http://192.168.x.x:8000`). Funciona sobre cualquier red Wi-Fi o hotspot local **sin internet**.

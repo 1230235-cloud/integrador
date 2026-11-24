@@ -117,7 +117,6 @@ class MainWindow(QMainWindow):
         self.ind_volt = IndicatorCard("BATERÍA", "V", Colors.VOLT, decimals=2,
                                       warning_low=6.8)
         self.ind_acc = IndicatorCard("ACELERACIÓN", "m/s²", Colors.WARN, decimals=2)
-        self.ind_sec = IndicatorCard("CARGA SECUNDARIA", "", Colors.INFO)
         self.ind_st = MissionClockCard(self)
 
         grid.addWidget(self.ind_alt, 0, 0)
@@ -127,7 +126,6 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.ind_volt, 2, 0)
         grid.addWidget(self.ind_acc, 2, 1)
         grid.addWidget(self.ind_st, 3, 0, 1, 2)
-        grid.addWidget(self.ind_sec, 4, 0, 1, 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         layout.addWidget(indicators)
@@ -316,14 +314,6 @@ class MainWindow(QMainWindow):
             telemetry.t,
             f"{telemetry.state_name} · máx {self._max_altitude:.1f} m",
         )
-
-        if telemetry.secondary_known:
-            rumbo = (f"{telemetry.sec_bearing:.0f}°"
-                     if telemetry.sec_bearing >= 0.0 else "rumbo n/d")
-            self.ind_sec.set_text(
-                f"{telemetry.sec_distance:.1f} m  ·  {rumbo}", Colors.INFO)
-        else:
-            self.ind_sec.set_text("sin dato", Colors.TEXT_FAINT)
 
         self.attitude.set_attitude(telemetry.pitch, telemetry.roll, telemetry.yaw)
         self.attitude.set_mission_stage(

@@ -7,13 +7,14 @@ import time
 from PyQt5.QtGui import QColor, QTextCharFormat, QTextCursor
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
+    QAction,
     QCheckBox,
     QFileDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
@@ -109,37 +110,55 @@ class ControlPanel(Panel):
         super().__init__("CONTROL DE MISIÓN", parent)
         self._recording = False
 
-        grid = QGridLayout()
-        grid.setSpacing(8)
+        # Menú desplegable unificado para comandos de misión y grabación
+        self.menu_btn = _button(
+            "ACCIONES DE MISIÓN  ▾",
+            "Accent",
+            "Abre el menú de calibración, despliegue, reinicio y grabación",
+        )
+        self.menu = QMenu(self)
+        self.menu.setStyleSheet(
+            f"QMenu {{ background: {Colors.BG_PANEL}; color: {Colors.TEXT}; "
+            f"border: 1px solid {Colors.BORDER}; padding: 6px; font-size: 12px; }}"
+            f"QMenu::item {{ padding: 7px 18px; border-radius: 4px; }}"
+            f"QMenu::item:selected {{ background: {Colors.BG_WIDGET}; color: {Colors.ACCENT}; }}"
+            f"QMenu::item:disabled {{ color: {Colors.TEXT_FAINT}; }}"
+            f"QMenu::separator {{ height: 1px; background: {Colors.BORDER}; margin: 4px 8px; }}"
+        )
 
-        self.calib_btn = _button("CALIBRAR BARÓMETRO", "Accent",
-                                 "Fija el cero de altitud con el CanSat quieto "
-                                 "en el suelo (100 muestras)")
-        self.calib_btn.clicked.connect(lambda: self._send(protocol.CMD_CALIBRATE))
-        grid.addWidget(self.calib_btn, 0, 0, 1, 2)
+        self.action_calib = QAction("Calibrar barómetro  (C,CAL,1)", self)
+        self.action_calib.triggered.connect(lambda: self._send(protocol.CMD_CALIBRATE))
+        self.menu.addAction(self.action_calib)
 
-        self.deploy_btn = _button("DESPLEGAR AUTOGIRO", "Primary",
-                                  "Abre el autogiro de inmediato; el desarrollo "
-                                  "automático a 200 m no se ve afectado")
-        self.deploy_btn.clicked.connect(lambda: self._send(protocol.CMD_DEPLOY_PARENT))
-        grid.addWidget(self.deploy_btn, 1, 0)
+        self.action_deploy = QAction("Desplegar autogiro  (C,DEP,DEPLOY)", self)
+        self.action_deploy.triggered.connect(lambda: self._send(protocol.CMD_DEPLOY_PARENT))
+        self.menu.addAction(self.action_deploy)
 
-        self.reset_btn = _button("REINICIAR MISIÓN", "Warn",
-                                 "Vuelve a PRE conservando el cero barométrico")
-        self.reset_btn.clicked.connect(lambda: self._send(protocol.CMD_RECOVER))
-        grid.addWidget(self.reset_btn, 1, 1)
+        self.action_reset = QAction("Reiniciar misión  (C,SYS,RESET)", self)
+        self.action_reset.triggered.connect(lambda: self._send(protocol.CMD_RECOVER))
+        self.menu.addAction(self.action_reset)
 
-        self.abort_btn = _button("ABORTAR DESPLIEGUE", "Danger",
-                                 "Cancela el despliegue automático (no recoge "
-                                 "unas palas ya abiertas)")
-        self.abort_btn.clicked.connect(lambda: self._send(protocol.CMD_CUT_PARACHUTE))
-        grid.addWidget(self.abort_btn, 2, 0, 1, 2)
+        self.action_abort = QAction("Abortar despliegue  (C,CHUTE,CUT)", self)
+        self.action_abort.triggered.connect(lambda: self._send(protocol.CMD_CUT_PARACHUTE))
+        self.menu.addAction(self.action_abort)
 
-        self.record_btn = _button("INICIAR GRABACIÓN CSV", "Primary",
-                                  "Registra toda la telemetría recibida en un fichero CSV")
-        self.record_btn.clicked.connect(self._toggle_recording)
-        grid.addWidget(self.record_btn, 3, 0, 1, 2)
-        self.body.addLayout(grid)
+        self.menu.addSeparator()
+
+        self.action_record = QAction("Iniciar grabación (CSV + JSONL + Reporte)", self)
+        self.action_record.triggered.connect(self._toggle_recording)
+        self.menu.addAction(self.action_record)
+
+        self.action_browse = QAction("Elegir ruta de exportación…", self)
+        self.action_browse.triggered.connect(self._browse)
+        self.menu.addAction(self.action_browse)
+
+        self.menu_btn.setMenu(self.menu)
+        self.body.addWidget(self.menu_btn)
+
+        self.path_label = QLabel("Exportación: sin grabación activa", self)
+        self.path_label.setObjectName("Hint")
+        self.path_label.setToolTip("Sin grabación activa")
+        self.body.addWidget(self.path_label)
 
         row = QHBoxLayout()
         row.setSpacing(8)
@@ -152,18 +171,6 @@ class ControlPanel(Panel):
         self.send_btn.clicked.connect(self._send_typed)
         row.addWidget(self.send_btn)
         self.body.addLayout(row)
-
-        row2 = QHBoxLayout()
-        row2.setSpacing(8)
-        self.path_label = QLabel("CSV: —", self)
-        self.path_label.setObjectName("Hint")
-        self.path_label.setToolTip("Sin grabación activa")
-        row2.addWidget(self.path_label, 1)
-        self.browse_btn = _button("RUTA…", "", "Elige el fichero CSV de destino")
-        self.browse_btn.setFixedWidth(78)
-        self.browse_btn.clicked.connect(self._browse)
-        row2.addWidget(self.browse_btn)
-        self.body.addLayout(row2)
 
         row3 = QHBoxLayout()
         row3.setSpacing(8)
@@ -190,21 +197,30 @@ class ControlPanel(Panel):
 
     def set_link_active(self, active: bool) -> None:
         """Habilita los comandos solo con el enlace abierto."""
-        for button in (self.calib_btn, self.deploy_btn, self.reset_btn,
-                       self.abort_btn, self.send_btn):
-            button.setEnabled(active)
+        for action in (self.action_calib, self.action_deploy,
+                       self.action_reset, self.action_abort):
+            action.setEnabled(active)
+        self.send_btn.setEnabled(active)
         self.command_edit.setEnabled(active)
-        self.browse_btn.setEnabled(active or self._recording)
+        self.action_browse.setEnabled(active or self._recording)
 
     def set_recording(self, recording: bool, path: str = "") -> None:
-        """Refleja el estado de la grabación en el botón y la etiqueta."""
+        """Refleja el estado de la grabación en el menú y la etiqueta."""
         self._recording = recording
-        self.record_btn.setText("DETENER GRABACIÓN" if recording else "INICIAR GRABACIÓN CSV")
-        self.record_btn.setObjectName("Danger" if recording else "Primary")
-        _restyle(self.record_btn)
-        self.path_label.setText(f"CSV: {path}" if path else "CSV: —")
+        self.action_record.setText(
+            "Detener grabación y generar paquete de reporte"
+            if recording else "Iniciar grabación (CSV + JSONL + Reporte)"
+        )
+        self.menu_btn.setText(
+            "● GRABANDO · ACCIONES  ▾" if recording else "ACCIONES DE MISIÓN  ▾"
+        )
+        self.menu_btn.setObjectName("Danger" if recording else "Accent")
+        _restyle(self.menu_btn)
+        self.path_label.setText(
+            f"Exportando: {path}" if path else "Exportación: sin grabación activa"
+        )
         self.path_label.setToolTip(path or "Sin grabación activa")
-        self.browse_btn.setEnabled(recording)
+        self.action_browse.setEnabled(not recording)
 
     # -------------------------------------------------------------- internos
     def _send(self, command: str) -> None:
