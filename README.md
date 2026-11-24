@@ -1,211 +1,122 @@
-# CanSat · Estación Terrestre y Ordenador de a Bordo
+# CanSat "Pepe el Pollo" · Ordenador de a Bordo y Estación Terrestre
 
-Sistema completo para la misión **CanSat "Satélite Enlatado"**: estación
-terrestre en Python (PyQt5 + pyqtgraph), firmware de vuelo para la etapa
-primaria, puente LoRa→USB y baliza para la carga secundaria.
+Sistema completo de vuelo y telemetría para el proyecto integrador **CanSat (PEUUM 2026 — FITEC)**: firmware C++ compatible con `arduino-cli` para dos placas **Heltec WiFi LoRa 32 V3 (ESP32-S3 + SX1262 915 MHz + OLED 0.96")**, estación terrestre de escritorio en **Python (PyQt5 + PyQtGraph + OpenGL)** con modelo 3D animado de desacoplamiento, grabación dual **CSV + JSONL**, análisis post-vuelo y **espejo web LAN 100 % offline** para tablets.
 
-La misión se suelta a **450 m**, la etapa primaria abre su **autogiro a 200 m
-sobre el punto de suelta**, desciende estabilizada y transmite durante todo el
-vuelo y **al menos 10 s tras el aterrizaje**. La etapa secundaria (un segundo
-huevo) se libera en el mismo instante y cae libre.
-
-![Dashboard de la estación terrestre](docs/dashboard.png)
+<p align="center">
+  <img src="docs/insignia-pepe-el-pollo.png" alt="Insignia Pepe el Pollo" width="220"/>
+</p>
 
 ---
 
-## Arquitectura
+## 1. Arquitectura del sistema
 
-```
-   ┌──────────────────────┐         915 MHz          ┌──────────────────────┐
-   │  ETAPA PRIMARIA      │        SF7 / BW125       │  RECEPTOR            │
-   │  Heltec LoRa V3      │ ───────────────────────▶ │  Heltec LoRa V3      │
-   │  BMP280 + BNO080     │ ◀─────────────────────── │  (puente)            │
-   │  SG90 (autogiro)     │        comandos          │                      │
-   └──────────────────────┘                          └──────────┬───────────┘
-              ▲                                                 │ USB 115200
-              │ 915 MHz (RSSI)                                  │ CSV
-   ┌──────────┴───────────┐                          ┌──────────▼───────────┐
-   │  BALIZA SECUNDARIA   │                          │  ESTACIÓN TERRESTRE  │
-   │  ESP32 + SX1262      │                          │  Python / PyQt5      │
-   │  (segundo huevo)     │                          │  + análisis postvuelo│
-   └──────────────────────┘                          └──────────────────────┘
-```
-
-* El receptor es **transparente**: la estación terrestre sigue hablando CSV por
-  un puerto serie normal, igual que si el CanSat estuviera cableado.
-* El enlace binario CanSat↔receptor usa tramas de 42 B con CRC-16 (ver
-  [`docs/protocolo.md`](docs/protocolo.md)).
-
-## Estructura del repositorio
-
-```
-cansatterraria/
-├── main.py                     # arranque de la estación terrestre
-├── requirements.txt
-├── gs/                         # estación terrestre (Python)
-│   ├── protocol.py            #   Telemetry, parseo CSV, comandos
-│   ├── flight_profile.py       #   física del vuelo sintético (sin Qt)
-│   ├── serial_worker.py        #   hilo de recepción + simulador
-│   ├── recording.py            #   grabación CSV thread-safe
-│   ├── main_window.py          #   dashboard
-│   ├── theme.py
-│   └── widgets/                #   indicadores, gráficas, actitud 3D, consola
-├── tools/
-│   ├── generar_vuelo_sintetico.py   # CSV de vuelo reproducible
-│   ├── replay.py                   # inyecta un CSV por puerto serie
-│   └── analisis_vuelo.py           # métricas + gráficas + JSON
-├── firmware/
-│   ├── comun/include/enlace.h  #   tramas, CRC, parámetros de radio
-│   ├── cansat/                 #   ordenador de a bordo (etapa primaria)
-│   ├── estacion/               #   puente LoRa → USB
-│   └── baliza/                 #   baliza de la carga secundaria
-├── tests/                      # pytest (protocolo, física, análisis)
-└── docs/
-    ├── protocolo.md
-    ├── hardware.md
-    ├── logica-de-vuelo.md
-    └── operacion.md
+```text
+  ┌──────────────────────────┐    LoRa 915.0 MHz     ┌──────────────────────────┐
+  │  CANSAT TX (En vuelo)    │   SF7 / BW125 / CRC   │  GROUND RX (En tierra)   │
+  │  Heltec WiFi LoRa 32 V3  │ ────────────────────▶ │  Heltec WiFi LoRa 32 V3  │
+  │  BMP280 + BNO08x (Wire1) │ ◀──────────────────── │  OLED con insignia +     │
+  │  SG90 (autogiro 200 m)   │   comandos uplink     │  anexo de RSSI / SNR     │
+  └──────────────────────────┘                       └────────────┬─────────────┘
+                                                                  │ USB Serial 115200
+                                                                  │ CSV + RSSI/SNR
+                                                     ┌────────────▼─────────────┐
+                                                     │  ESTACIÓN TERRESTRE (PC) │
+                                                     │  Python / PyQt5 / OpenGL │
+                                                     │  CSV + JSONL + Análisis  │
+                                                     └────────────┬─────────────┘
+                                                                  │ Wi-Fi / Hotspot LAN
+                                                                  │ (sin internet, :8000)
+                                                     ┌────────────▼─────────────┐
+                                                     │  ESPEJO WEB EN TABLET    │
+                                                     │  HTML5 / SSE / Canvas 3D │
+                                                     └──────────────────────────┘
 ```
 
-## Puesta en marcha rápida
+---
+
+## 2. Explicación del código y funciones principales
+
+### A. Firmware C++ (`arduino-cli`, target `esp32:esp32:heltec_wifi_lora_32_V3`)
+
+1. **[`firmware/cansat_tx/cansat_tx.ino`](firmware/cansat_tx/cansat_tx.ino)** — Ordenador de a bordo (TX)
+   - **Bus I2C secundario (`Wire1`):** Mapeado a `PIN_I2C_SDA = 41` y `PIN_I2C_SCL = 42` a `100 kHz` para no interferir con la OLED (`17/18`), el radio SX1262 (`8..14`) ni el puerto serie USB (`GPIO 43`).
+   - **`pollSensors()`**: Lee el barómetro **BMP280** (`0x76`/`0x77`) y el IMU **BNO08x** (`0x4A`/`0x4B`), aplica un **filtro alpha-beta** para estimar altitud y velocidad vertical, rota la aceleración lineal al marco vertical del mundo y sanea cualquier `NaN` o valor fuera de rango (`sanitizeFloat()`). Si el IMU no está conectado, la misión continúa con el barómetro sin bloquearse.
+   - **`updateMissionState()`**: Máquina de estados (`PRE → ASCENSO → DESCENSO → ATERRIZAJE → FIN`) con disparo predictivo del servomotor **SG90** (`GPIO 5`) cerca de **200 m** considerando el retardo mecánico del servo (`SERVO_DELAY_S`).
+   - **`transmitTelemetry()`**: Envía la trama CSV de telemetría por LoRa SX1262 a `915.0 MHz` y abre una ventana breve para recibir comandos desde tierra (`C,CAL,1`, `C,DEP,DEPLOY`, `C,CHUTE,CUT`, `C,SYS,RESET`).
+   - **`refreshOled()`**: Muestra en la OLED 0.96" el estado de sensores (`BMP:OK / IMU:OK / RF:OK`), altitud, velocidad, temperatura, presión, batería y contador de paquetes.
+
+2. **[`firmware/ground_rx/ground_rx.ino`](firmware/ground_rx/ground_rx.ino)** y **[`firmware/ground_rx/logo.h`](firmware/ground_rx/logo.h)** — Receptor LoRa→USB (RX)
+   - **`drawTeamSplash()`**: Muestra la insignia del equipo **"Pepe el Pollo"** (`64×64` XBM en `PROGMEM`) al arrancar y mientras espera el enlace LoRa (`WAIT 915`).
+   - **`processIncomingLora()`**: Recibe cada trama CSV por interrupción (`DIO1`), consulta `radio.getRSSI()` y `radio.getSNR()`, los anexa al final de la línea y la envía limpia por USB Serial a `115200` baudios.
+   - **`processSerialCommands()`**: Escucha comandos enviados desde la interfaz de Python y los transmite por LoRa hacia el CanSat.
+
+*(El repositorio conserva además los proyectos originales de PlatformIO en `firmware/cansat`, `firmware/estacion` y `firmware/baliza`.)*
+
+### B. Estación Terrestre en Python (`main.py`, `gs/`, `tools/`)
+
+- **[`main.py`](main.py)**: Punto de entrada con soporte de flags `--sim`, `--port`, `--baud` y `--web-port` (puerto del espejo LAN para tablet, `8000` por defecto).
+- **[`gs/protocol.py`](gs/protocol.py)**: Define la estructura `Telemetry`, el parser tolerante `parse_telemetry()` (admite tramas de 13, 16 o 18 campos con `rssi` y `snr`, saneando `NaN`/infinitos), `format_csv_row()` y `telemetry_to_dict()`.
+- **[`gs/serial_worker.py`](gs/serial_worker.py)**: Hilo `QThread` dedicado para lectura serie no bloqueante, cálculo de paquetes perdidos/cadencia y ejecución del simulador de vuelo.
+- **[`gs/flight_profile.py`](gs/flight_profile.py)**: Modelo físico determinista del vuelo sintético (ascenso a 450 m, caída libre, autogiro a 200 m, aterrizaje y simulación de RSSI/SNR).
+- **[`gs/recording.py`](gs/recording.py)**: Grabador thread-safe (`CsvRecorder`) que escribe simultáneamente el registro en **CSV** y su espejo estructurado en **JSONL**.
+- **[`gs/widgets/attitude.py`](gs/widgets/attitude.py)**: Visor **OpenGL 3D** (`Satellite3DView`) del CanSat de 2 etapas (primaria azul + secundaria ámbar + 3 palas de autogiro) con animación de desacoplamiento y giro del rotor cuando `chute == 1`, `satellite == 1` o al cruzar `200 m` en descenso. Incluye horizonte artificial 2D como respaldo.
+- **[`gs/web_mirror.py`](gs/web_mirror.py)**: Servidor HTTP + Server-Sent Events (`WebMirrorServer`) con librería estándar de Python y dashboard HTML5/Canvas autocontenido (**sin internet ni CDNs**), permitiendo ver telemetría, gráfica de altitud y CanSat 3D desde cualquier tablet en la misma red Wi-Fi o hotspot local.
+- **[`gs/main_window.py`](gs/main_window.py)**: Dashboard principal PyQt5 (conexión, tarjetas de indicadores, gráficas en vivo, actitud 3D, consola de eventos, barra de estado con `RSSI/SNR` y controles de misión).
+- **[`tools/analisis_vuelo.py`](tools/analisis_vuelo.py)**: Script post-vuelo que genera `<vuelo>_procesado.csv`, `<vuelo>_resumen.json` y gráficas de altura, velocidad y actitud.
+
+---
+
+## 3. Cableado del CanSat TX (Heltec WiFi LoRa 32 V3)
+
+El chip LoRa SX1262 (`SCK=9, MISO=11, MOSI=10, CS=8, DIO1=14, RST=12, BUSY=13`) y la OLED (`SDA=17, SCL=18, RST=21, Vext=36`) vienen integrados en la placa. Solo se cablean los periféricos externos:
+
+| Periférico | Señal | GPIO Heltec V3 | Notas |
+| --- | --- | ---: | --- |
+| BMP280 + BNO08x | I²C SDA | **41** | Alimentación a **3.3 V** |
+| BMP280 + BNO08x | I²C SCL | **42** | Bus secundario `Wire1` a 100 kHz |
+| Servo SG90 | PWM | **5** | Alimentar a 5 V desde Mini360 (GND común) |
+| Batería | ADC | **1** | Divisor resistivo (`BATTERY_DIVIDER = 2.0`) |
+
+---
+
+## 4. Instalación, flasheo y ejecución
+
+### Compilar y subir firmwares (`arduino-cli`)
+
+**Placa 1 — CanSat TX (en el satélite):**
+```bash
+arduino-cli compile --fqbn esp32:esp32:heltec_wifi_lora_32_V3 firmware/cansat_tx
+arduino-cli upload  --fqbn esp32:esp32:heltec_wifi_lora_32_V3 -p /dev/ttyUSB0 firmware/cansat_tx
+```
+
+**Placa 2 — Ground RX (conectada por USB a la PC):**
+```bash
+arduino-cli compile --fqbn esp32:esp32:heltec_wifi_lora_32_V3 firmware/ground_rx
+arduino-cli upload  --fqbn esp32:esp32:heltec_wifi_lora_32_V3 -p /dev/ttyUSB0 firmware/ground_rx
+```
+
+### Ejecutar la Estación Terrestre en Python
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate        # en Fish shell: source .venv/bin/activate.fish
 pip install -r requirements.txt
-python main.py --sim            # dashboard con vuelo sintético
-```
-Sin argumentos, el desplegable de puerto ofrece **— SIMULACIÓN —** y los
-puertos COM/TTY detectados. Atajos: `Ctrl+O` conectar · `Ctrl+D` desconectar ·
-`Ctrl+R` grabación · `Ctrl+L` limpiar consola.
 
-### Con hardware
+# Modo simulación (sin hardware)
+python3 main.py --sim
 
-1. Flashea el receptor (`firmware/estacion`) y conéctalo por USB al PC.
-2. Abre la estación, selecciona el puerto del receptor a **115200** y conecta.
-3. Enciende el CanSat: verás `E,enlace con el CanSat establecido` y la
-   telemetría a 4 Hz.
-
-## Firmware
-
-Cada proyecto es independiente (PlatformIO):
-
-```bash
-cd firmware/cansat    && pio run -t upload     # Heltec LoRa 32 V3 (etapa primaria)
-cd firmware/estacion  && pio run -t upload     # Heltec LoRa 32 V3 (receptor)
-cd firmware/baliza    && pio run -t upload     # ESP32 genérico + SX1262 (secundaria)
-pio device monitor -b 115200
+# Modo real (receptor Heltec RX conectado por USB)
+python3 main.py --port /dev/ttyUSB0 --baud 115200
 ```
 
-Estado verificado de compilación (PlatformIO 6.2, espressif32 8.0.0):
+Al iniciar, la consola muestra la URL local del espejo para tablet (por ejemplo `http://192.168.x.x:8000`). Funciona sobre cualquier red Wi-Fi o hotspot local **sin internet**.
 
-| Proyecto | Flash | RAM |
-|----------|-------|-----|
-| `cansat` | 11,7 % (391 kB) | 7,8 % (25,6 kB) |
-| `estacion` | 10,0 % (336 kB) | 7,2 % (23,4 kB) |
-| `baliza` | 23,9 % (314 kB) | 7,2 % (23,5 kB) |
+---
 
-Cableado, presupuesto de potencia y montaje: [`docs/hardware.md`](docs/hardware.md).
+## 5. Evidencias de funcionamiento
 
-## Protocolo de telemetría (CSV)
+### 5.1 Estación terrestre de escritorio (PyQt5 + OpenGL 3D + Espejo LAN activo)
+![Estación terrestre CanSat](docs/evidencia-estacion.png)
 
-Trama terminada en `\r` o `\n`. Las cuatro últimas columnas son opcionales:
-los firmware antiguos de 13 campos siguen funcionando.
-
-```
-T,t,alt,temp,pres,vol,pitch,roll,yaw,state,sat,chute,packet,vel,acc,sec_dist,sec_bear
-T,125.40,1042.6,22.8,891.4,8.61,3.1,-2.4,179.8,2,1,1,1254,-4.70,0.12,38.5,-1.0
-```
-
-| Campo | Unidad | Descripción |
-|-------|--------|-------------|
-| `t` | s | Tiempo de misión |
-| `alt` | m | Altitud sobre el punto de suelta |
-| `temp` | °C | Temperatura |
-| `pres` | hPa | Presión atmosférica |
-| `vol` | V | Tensión de batería |
-| `pitch`, `roll`, `yaw` | ° | Actitud (BNO080) |
-| `state` | — | 0 pre-lanzamiento · 1 ascenso · 2 descenso · 3 aterrizaje · 4 fin |
-| `sat` | — | Etapa secundaria liberada |
-| `chute` | — | Autogiro desplegado |
-| `packet` | — | Contador (detecta pérdidas) |
-| `vel` | m/s | Velocidad vertical (+ arriba) |
-| `acc` | m/s² | Aceleración vertical (+ arriba) |
-| `sec_dist` | m | Distancia a la carga secundaria (−1 = sin dato) |
-| `sec_bear` | ° | Rumbo a la carga secundaria (−1 = sin dato) |
-
-También se aceptan `E,<texto>` (eventos) y `OK/CMD/ACK` (confirmaciones).
-Detalle completo y tramas binarias: [`docs/protocolo.md`](docs/protocolo.md).
-
-### Comandos
-
-| Botón de la estación | Trama enviada | Efecto en el CanSat |
-|----------------------|---------------|---------------------|
-| Calibrar barómetro | `C,CAL,1` | Fija el cero de altitud en el suelo |
-| Desplegar autogiro | `C,DEP,DEPLOY` | Abre el autogiro de inmediato |
-| Reiniciar misión | `C,SYS,RESET` | Vuelve a PRE conservando el cero |
-| Abortar despliegue | `C,CHUTE,CUT` | Cancela el despliegue automático |
-
-## Funcionalidades de la estación
-
-1. **Panel de conexión** — puerto, baudrate (9600…921600), estado del enlace.
-2. **Indicadores** — altitud, velocidad vertical, temperatura, presión,
-   batería (alerta < 6,8 V), aceleración vertical, reloj de misión con la
-   **altura máxima** y distancia/rumbo a la carga secundaria.
-3. **Gráficas** — altitud con la línea de despliegue a 200 m, velocidad y
-   aceleración (eje doble) y temperatura/presión. Buffers de 1500 muestras,
-   redibujado a 4 Hz.
-4. **Actitud 3D** — satélite con mallas OpenGL rotado según pitch/roll/yaw;
-   respaldo 2D si no hay OpenGL.
-5. **Control y logs** — comandos, grabación CSV, consola con colores.
-6. **Hilo dedicado** — `SerialWorker` (QThread) nunca bloquea la interfaz.
-
-## Análisis post-vuelo
-
-```bash
-python tools/generar_vuelo_sintetico.py --hz 10 --ruido 0.4
-python tools/analisis_vuelo.py grabaciones/vuelo_sintetico.csv --masa 0.30
-```
-
-Genera `<nombre>_procesado.csv`, `<nombre>_resumen.json` y las gráficas de
-altura, velocidad y actitud. Métricas: altura máxima, instante de apogeo,
-altura y error de despliegue, velocidades máxima de ascenso y descenso,
-velocidad y energía de impacto, tiempo transmitiendo tras el aterrizaje y
-distancia final a la carga secundaria.
-
-## Pruebas
-
-```bash
-pip install -r requirements-dev.txt
-python -m pytest -q          # 32 pruebas: protocolo, física, troceado y análisis
-```
-
-## Cumplimiento de requisitos
-
-| Requisito | Dónde se resuelve |
-|-----------|-------------------|
-| Presión, temperatura y orientación en vuelo | BMP280 + BNO080 → tramas `T` |
-| Aceleración en ascenso y caída libre | BNO080, aceleración vertical en el mundo |
-| Velocidad en toda la trayectoria | Filtro alpha-beta sobre el barómetro |
-| Altura máxima | `altitudMax` en el CanSat y métrica del análisis |
-| Despliegue a 200 m | Disparo predictivo con retardo del servo |
-| Dos huevos (primaria y secundaria) | Etapa primaria + baliza independiente |
-| ≥ 10 s transmitiendo tras aterrizar | 30 s a 2 Hz y luego baliza lenta |
-| Distancia y rumbo a la secundaria | RSSI (distancia) · rumbo: ver limitaciones |
-| Entrega de toda la información | CSV grabado + `analisis_vuelo.py` + JSON |
-
-## Limitaciones conocidas
-
-* **Rumbo a la carga secundaria**: con una antena omnidireccional el RSSI da
-  distancia, no dirección. El firmware reserva el campo `sec_rumbo_deg` y la
-  estación lo muestra como «rumbo n/d» hasta que la baliza lleve GPS o se use
-  una antena directiva. Ver [`docs/hardware.md`](docs/hardware.md).
-* La distancia por RSSI tiene un error típico de ±30-50 % en campo abierto;
-  se calibra con `RSSI_D0_DBM` y `RSSI_N` en `firmware/cansat/src/config.hpp`.
-* La batería de 9 V alimenta el servo con mucha caída de tensión; se
-  recomienda LiPo 2S + condensador (ver [`docs/hardware.md`](docs/hardware.md)).
-* El huevo secundario cae libre desde 200 m (≈ 36 m/s): necesita un freno
-  aerodinámico pasivo para sobrevivir.
-
-## Licencia
-
-Uso educativo y de competición. Sin garantías: verifica siempre el montaje y
-las pruebas de despliegue en banco antes de volar.
+### 5.2 Espejo Web LAN en tablet (100 % offline) con desacoplamiento y autogiro 3D
+![Dashboard LAN para tablet](docs/evidencia-tablet-lan.png)

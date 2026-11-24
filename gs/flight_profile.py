@@ -237,4 +237,6 @@ class FlightProfile:
             accel=float(self.aceleracion(t)),
             sec_distance=float(self.distancia_secundaria(t)),
             sec_bearing=float(self.rumbo_secundaria(t)),
+            rssi=round(-55.0 - 0.08 * max(alt, 0.0), 1),
+            snr=round(9.5 - 0.008 * max(alt, 0.0), 1),
         )

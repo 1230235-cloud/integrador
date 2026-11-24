@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
 
 from .serial_worker import SIM_TAG, PortScanThread, SerialWorker
 from .theme import Colors
+from .web_mirror import WebMirrorServer
 from .widgets import (
     AttitudeIndicator,
     ConnectionPanel,
@@ -41,6 +42,7 @@ class MainWindow(QMainWindow):
         initial_port: str | None = None,
         initial_baudrate: int | None = None,
         force_simulation: bool = False,
+        web_port: int = 8000,
     ) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
@@ -48,6 +50,7 @@ class MainWindow(QMainWindow):
 
         self.worker = SerialWorker(self)
         self.port_scanner: PortScanThread | None = None
+        self.web_mirror = WebMirrorServer(port=web_port)
         self._linked = False
         self._echo = True
         self._max_altitude = 0.0
@@ -63,10 +66,14 @@ class MainWindow(QMainWindow):
         self._build_shortcuts()
 
         self.console.append("Estación terrestre lista.", "ok", stamp=False)
+        if self.web_mirror.start():
+            self.console.append(
+                f"Espejo LAN para tablet activo (sin internet): {self.web_mirror.url}",
+                "ok", stamp=False)
         self.console.append(
             "Actitud: " + self.attitude.backend_name
             + "   ·   trama: T,t,alt,temp,pres,vol,pitch,roll,yaw,state,sat,chute,"
-              "packet,vel,acc,sec_dist,sec_bear",
+              "packet,vel,acc,sec_dist,sec_bear[,rssi,snr]",
             "info", stamp=False)
         self.scan_ports()
 
@@ -176,6 +183,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status)
 
         self.lbl_link = _status_label("ENLACE: —", Colors.TEXT_FAINT)
+        self.lbl_rf = _status_label("RF: —", Colors.TEXT_DIM)
         self.lbl_packets = _status_label("PAQUETES: 0", Colors.TEXT_DIM)
         self.lbl_loss = _status_label("PERDIDOS: 0", Colors.TEXT_DIM)
         self.lbl_rate = _status_label("CADENCIA: 0.0 Hz", Colors.TEXT_DIM)
@@ -183,7 +191,7 @@ class MainWindow(QMainWindow):
         self.lbl_backend = _status_label("MOTOR: —", Colors.TEXT_FAINT)
         self.lbl_backend.setText(f"MOTOR: {self.attitude.backend_name}")
 
-        for label in (self.lbl_link, self.lbl_packets, self.lbl_loss, self.lbl_rate):
+        for label in (self.lbl_link, self.lbl_rf, self.lbl_packets, self.lbl_loss, self.lbl_rate):
             self.status.addWidget(label)
         self.status.addPermanentWidget(self.lbl_record)
         self.status.addPermanentWidget(self.lbl_backend)
@@ -318,15 +326,30 @@ class MainWindow(QMainWindow):
             self.ind_sec.set_text("sin dato", Colors.TEXT_FAINT)
 
         self.attitude.set_attitude(telemetry.pitch, telemetry.roll, telemetry.yaw)
+        self.attitude.set_mission_stage(
+            telemetry.satellite, telemetry.chute, telemetry.altitude, telemetry.state
+        )
         self.plots.add_sample(telemetry)
+        self.web_mirror.publish(telemetry)
+
+        if telemetry.rssi is not None:
+            snr_txt = f" SNR {telemetry.snr:+.1f} dB" if telemetry.snr is not None else ""
+            self.lbl_rf.setText(f"RF: {telemetry.rssi:.1f} dBm{snr_txt}")
+        else:
+            self.lbl_rf.setText("RF: —")
 
         if self._echo:
+            rf_echo = (
+                f" | RSSI {telemetry.rssi:.1f} dBm SNR {telemetry.snr:+.1f} dB"
+                if telemetry.rssi is not None and telemetry.snr is not None
+                else ""
+            )
             self.console.append(
                 f"RX T {telemetry.t:8.2f}s | alt {telemetry.altitude:7.1f} m | "
                 f"vel {telemetry.velocity:+6.2f} m/s | acc {telemetry.accel:+6.2f} m/s² | "
                 f"{telemetry.temperature:5.1f} °C | {telemetry.pressure:7.2f} hPa | "
                 f"{telemetry.voltage:4.2f} V | P{telemetry.pitch:+6.1f} "
-                f"R{telemetry.roll:+6.1f} Y{telemetry.yaw:+6.1f} | pkt {telemetry.packet}",
+                f"R{telemetry.roll:+6.1f} Y{telemetry.yaw:+6.1f} | pkt {telemetry.packet}{rf_echo}",
                 "rx")
 
     def _on_worker_log(self, message: str, level: str) -> None:
@@ -365,6 +388,7 @@ class MainWindow(QMainWindow):
         if self.controls.is_recording:
             rows = self.worker.stop_recording()
             self.console.append(f"Grabación cerrada al salir ({rows} muestras)", "warn")
+        self.web_mirror.stop()
         self.worker.shutdown()
         if self.port_scanner is not None and self.port_scanner.isRunning():
             self.port_scanner.wait(1000)

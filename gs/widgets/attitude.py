@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 
-from PyQt5.QtCore import QPoint, QRectF, Qt
+from PyQt5.QtCore import QPoint, QRectF, Qt, QTimer
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPolygon, QVector3D
 from PyQt5.QtWidgets import (
     QHBoxLayout,
@@ -135,11 +135,27 @@ class Attitude2DView(QWidget):
 
         self.canvas = HorizonCanvas(self)
         layout.addWidget(self.canvas, 1)
-        _holder, self.readout = _attitude_readout(self)
+        _holder, self.readout, self.stage_label = _attitude_readout(self)
         layout.addWidget(_holder)
 
     def set_attitude(self, pitch: float, roll: float, yaw: float) -> None:
         self.canvas.update_state(pitch, roll, yaw)
+        self.readout[0].setText(f"P {pitch:+06.1f}")
+        self.readout[1].setText(f"R {roll:+06.1f}")
+        self.readout[2].setText(f"Y {yaw:+06.1f}")
+
+    def set_separation(self, decoupled: bool) -> None:
+        if decoupled:
+            self.stage_label.setText("DESACOPLADO · AUTOGIRO")
+            self.stage_label.setStyleSheet(
+                f"font-family: Consolas, monospace; font-size: 11px; "
+                f"font-weight: bold; color: {Colors.OK};"
+            )
+        else:
+            self.stage_label.setText("ACOPLADO")
+            self.stage_label.setStyleSheet(
+                f"font-family: Consolas, monospace; font-size: 11px; color: {Colors.TEXT_DIM};"
+            )
 
 
 # ------------------------------------------------------------------ vista 3D
@@ -175,19 +191,42 @@ def _cone_mesh(radius: float, height: float, color) -> MeshData:
     return MeshData(vertexes=vertices, faces=faces, vertexColors=vertex_colors)
 
 
-class Satellite3DView(QWidget):
-    """Modelo 3D del CanSat rotado según pitch / roll / yaw.
+def _cylinder_mesh(radius: float, height: float, color, segments: int = 24) -> MeshData:
+    """Malla de un cilindro sólido centrado en el origen (eje Z)."""
+    half_h = height / 2.0
+    vertices = [(0.0, 0.0, -half_h), (0.0, 0.0, half_h)]  # 0: centro base, 1: centro tapa
+    for i in range(segments):
+        ang = 2.0 * math.pi * i / segments
+        cx, cy = radius * math.cos(ang), radius * math.sin(ang)
+        vertices.append((cx, cy, -half_h))  # 2 + 2*i
+        vertices.append((cx, cy, half_h))   # 3 + 2*i
 
-    La escena usa mallas propias (:class:`MeshData` + ``GLMeshItem``) porque
-    ``GLBoxItem`` de pyqtgraph solo dibuja el alambre; así el satélite se ve
-    sólido. El morro es una pirámide y los paneles solares son cajas finas.
+    faces = []
+    for i in range(segments):
+        nxt = (i + 1) % segments
+        b0, t0 = 2 + 2 * i, 3 + 2 * i
+        b1, t1 = 2 + 2 * nxt, 3 + 2 * nxt
+        faces.append((b0, b1, t1))
+        faces.append((b0, t1, t0))
+        faces.append((0, b1, b0))
+        faces.append((1, t0, t1))
+
+    rgba = (color.redF(), color.greenF(), color.blueF(), 1.0)
+    return MeshData(vertexes=vertices, faces=faces, vertexColors=[rgba] * len(vertices))
+
+
+class Satellite3DView(QWidget):
+    """Modelo 3D del CanSat (etapa primaria + secundaria + autogiro) en OpenGL.
+
+    Rota según pitch / roll / yaw y anima el desacoplamiento de la etapa
+    secundaria y la apertura/giro de las 3 palas del autogiro.
     """
 
-    FUSELAGE = QColor(96, 128, 165)
-    NOSE = QColor(132, 168, 200)
-    PANEL = QColor(28, 78, 168)
-    BOOM = QColor(186, 200, 216)
-    ANTENNA = QColor(255, 178, 0)
+    PRIMARY = QColor(74, 118, 168)
+    CAP = QColor(148, 174, 202)
+    SECONDARY = QColor(214, 134, 62)
+    BLADE = QColor(232, 240, 248)
+    HUB = QColor(255, 178, 0)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -198,18 +237,26 @@ class Satellite3DView(QWidget):
         self.view = gl.GLViewWidget()
         self.view.setMinimumSize(260, 240)
         self.view.setBackgroundColor(QColor(Colors.BG_WIDGET))
-        self.view.setCameraPosition(pos=QVector3D(0, 0, 0), distance=5.6,
+        self.view.setCameraPosition(pos=QVector3D(0, 0, -0.15), distance=5.6,
                                     elevation=18, azimuth=35)
-        layout.addWidget(self.view, 1)   # botón izq.: orbitar · Ctrl+izq.: desplazar
+        layout.addWidget(self.view, 1)
 
-        _holder, self.readout = _attitude_readout(self)
+        _holder, self.readout, self.stage_label = _attitude_readout(self)
         layout.addWidget(_holder)
 
         self._build_reference()
 
+        self._pitch = self._roll = self._yaw = 0.0
+        self._decoupled = False
+        self._sep_progress = 0.0   # 0.0 = acoplado, 1.0 = desacoplado
+        self._rotor_angle = 0.0
+
         self.model = self._build_model()
         self.view.addItem(self.model)
-        self._pitch = self._roll = self._yaw = 0.0
+
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._step_animation)
+        self._anim_timer.start(33)  # ~30 FPS para animación suave
 
     def _build_reference(self) -> None:
         """Ejes de referencia y rejilla de suelo."""
@@ -217,20 +264,32 @@ class Satellite3DView(QWidget):
                                         glOptions="translucent"))
         grid = gl.GLGridItem(size=QVector3D(10, 10, 1), color=(40, 55, 72, 170))
         grid.setSpacing(x=1.0, y=1.0)
-        grid.translate(0, 0, -1.7)
+        grid.translate(0, 0, -2.2)
         self.view.addItem(grid)
 
     # ------------------------------------------------------------ escena
     def _build_model(self):
-        """Construye la jerarquía del satélite (raíz = fuselaje)."""
-        root = gl.GLMeshItem(meshdata=_box_mesh(0.62, 0.62, 1.10, self.FUSELAGE))
-        self._add(_cone_mesh(0.32, 0.46, self.NOSE), (0, 0, 0.55), root)
-        self._add(_box_mesh(0.05, 0.05, 0.60, self.ANTENNA), (0, 0, -0.84), root)
-        for sign in (1, -1):
-            self._add(_box_mesh(0.62, 0.08, 0.08, self.BOOM),
-                      (sign * 0.47, 0, 0.05), root)               # brazo
-            self._add(_box_mesh(1.24, 0.12, 0.62, self.PANEL),
-                      (sign * 1.00, 0, 0.05), root)               # panel solar
+        """Construye el CanSat: primaria (16 cm), secundaria (7 cm) y 3 palas."""
+        root = gl.GLMeshItem(meshdata=_cylinder_mesh(0.36, 1.12, self.PRIMARY))
+        # Tapa superior / cabezal del rotor
+        self._add(_cylinder_mesh(0.37, 0.08, self.CAP), (0, 0, 0.60), root)
+        self._hub = self._add(_cylinder_mesh(0.11, 0.12, self.HUB), (0, 0, 0.70), root)
+
+        # 3 palas del autogiro ancladas al hub
+        self._blades = []
+        blade_mesh = _box_mesh(0.95, 0.11, 0.025, self.BLADE)
+        for idx in range(3):
+            blade = gl.GLMeshItem(meshdata=blade_mesh)
+            blade.setParentItem(self._hub)
+            self._blades.append((idx * 120.0, blade))
+
+        # Etapa secundaria (debajo de la primaria, se desprende en -Z)
+        self._secondary = gl.GLMeshItem(
+            meshdata=_cylinder_mesh(0.35, 0.49, self.SECONDARY)
+        )
+        self._secondary.setParentItem(root)
+
+        self._apply_stage_transforms()
         return root
 
     @staticmethod
@@ -241,13 +300,52 @@ class Satellite3DView(QWidget):
         item.setParentItem(parent_item)
         return item
 
+    def _apply_stage_transforms(self) -> None:
+        """Actualiza la separación de la secundaria y el despliegue de palas.
+
+        Nota: en pyqtgraph.opengl las transformaciones se pre-multiplican
+        (la primera llamada se aplica primero en coordenadas locales).
+        """
+        p = self._sep_progress
+        # Secundaria: rota en su propio eje y luego baja en -Z al desacoplarse
+        self._secondary.resetTransform()
+        self._secondary.rotate(18.0 * p, 1, 0, 0)
+        self._secondary.rotate(-12.0 * p, 0, 1, 0)
+        self._secondary.translate(0.12 * p, -0.08 * p, -0.82 - 1.35 * p)
+
+        # Hub gira en su eje Z y se posiciona en la tapa superior (z = 0.70)
+        self._hub.resetTransform()
+        self._hub.rotate(self._rotor_angle, 0, 0, 1)
+        self._hub.translate(0, 0, 0.70)
+
+        # Palas: primero se desplazan desde el centro del hub (+X), luego se
+        # pliegan (88° = guardadas dentro del fuselaje; -8° = abiertas con
+        # ligero cono hacia arriba) y finalmente se distribuyen a 0/120/240°.
+        fold_angle = 88.0 * (1.0 - p) - 8.0 * p
+        for az, blade in self._blades:
+            blade.resetTransform()
+            blade.translate(0.50, 0.0, 0.0)
+            blade.rotate(fold_angle, 0, 1, 0)
+            blade.rotate(az, 0, 0, 1)
+
+    def _step_animation(self) -> None:
+        target = 1.0 if self._decoupled else 0.0
+        dirty = False
+        if abs(self._sep_progress - target) > 0.005:
+            step = 0.045 if target > self._sep_progress else -0.07
+            self._sep_progress = max(0.0, min(1.0, self._sep_progress + step))
+            dirty = True
+        if self._sep_progress > 0.15:
+            self._rotor_angle = (self._rotor_angle + 14.0 * self._sep_progress) % 360.0
+            dirty = True
+        if dirty:
+            self._apply_stage_transforms()
+
     # ---------------------------------------------------------------- API
     def set_attitude(self, pitch: float, roll: float, yaw: float) -> None:
         """Aplica la actitud (yaw → pitch → roll) al modelo."""
         self._pitch, self._roll, self._yaw = float(pitch), float(roll), float(yaw)
 
-        # Se reconstruye la transformación completa (resetTransform evita que
-        # las rotaciones se acumulen entre muestras).
         self.model.resetTransform()
         self.model.rotate(self._yaw, 0, 0, 1)
         self.model.rotate(self._pitch, 0, 1, 0)
@@ -257,14 +355,33 @@ class Satellite3DView(QWidget):
         self.readout[1].setText(f"R {roll:+06.1f}")
         self.readout[2].setText(f"Y {yaw:+06.1f}")
 
+    def set_separation(self, decoupled: bool) -> None:
+        """Activa o revierte la animación de desacoplamiento y autogiro."""
+        self._decoupled = bool(decoupled)
+        if self._decoupled:
+            self.stage_label.setText("DESACOPLADO · AUTOGIRO")
+            self.stage_label.setStyleSheet(
+                f"font-family: Consolas, monospace; font-size: 11px; "
+                f"font-weight: bold; color: {Colors.OK};"
+            )
+        else:
+            self.stage_label.setText("ACOPLADO")
+            self.stage_label.setStyleSheet(
+                f"font-family: Consolas, monospace; font-size: 11px; color: {Colors.TEXT_DIM};"
+            )
+
     def reset_camera(self) -> None:
         """Devuelve la cámara a la vista de referencia."""
-        self.view.setCameraPosition(pos=QVector3D(0, 0, 0), distance=5.6,
+        self.view.setCameraPosition(pos=QVector3D(0, 0, -0.15), distance=5.6,
                                     elevation=18, azimuth=35)
 
 
 def _attitude_readout(parent: QWidget):
-    """Fila con las lecturas P/R/Y. Devuelve ``(widget, [etiquetas])``."""
+    """Fila con las lecturas P/R/Y y estado de acoplamiento."""
+    wrapper = QVBoxLayout()
+    wrapper.setSpacing(3)
+    wrapper.setContentsMargins(0, 0, 0, 0)
+
     row = QHBoxLayout()
     row.setSpacing(14)
     row.setContentsMargins(0, 0, 0, 0)
@@ -277,17 +394,28 @@ def _attitude_readout(parent: QWidget):
         )
         row.addWidget(label, 1)
         labels.append(label)
+
+    stage = QLabel("ACOPLADO", parent)
+    stage.setAlignment(Qt.AlignCenter)
+    stage.setStyleSheet(
+        f"font-family: Consolas, monospace; font-size: 11px; color: {Colors.TEXT_DIM};"
+    )
+
+    wrapper.addLayout(row)
+    wrapper.addWidget(stage)
+
     holder = QWidget(parent)
-    holder.setLayout(row)
-    return holder, labels
+    holder.setLayout(wrapper)
+    return holder, labels, stage
 
 
 # ------------------------------------------------------------------ fachada
 class AttitudeIndicator(Panel):
     """Indicador de actitud con backend 3D (OpenGL) o 2D (respaldo)."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("ACTITUD · MODELO 3D", parent)
+    def __init__(self, parent: QWidget | None = None, deploy_limit_m: float = 200.0) -> None:
+        super().__init__("ACTITUD · CANSAT 3D", parent)
+        self.deploy_limit_m = float(deploy_limit_m)
 
         self.backend_name = "3D · OpenGL" if OPENGL_AVAILABLE else "2D · respaldo"
         self.view = Satellite3DView(self) if OPENGL_AVAILABLE else Attitude2DView(self)
@@ -307,5 +435,13 @@ class AttitudeIndicator(Panel):
     def set_attitude(self, pitch: float, roll: float, yaw: float) -> None:
         self.view.set_attitude(pitch, roll, yaw)
 
+    def set_mission_stage(self, satellite: int, chute: int,
+                          altitude: float, state: int) -> None:
+        """Actualiza el estado de desacoplamiento (por flag o por límite de altitud)."""
+        by_flag = bool(satellite) or bool(chute)
+        by_limit = (state == 2 and altitude <= self.deploy_limit_m)
+        self.view.set_separation(by_flag or by_limit)
+
     def clear(self) -> None:
         self.set_attitude(0.0, 0.0, 0.0)
+        self.view.set_separation(False)

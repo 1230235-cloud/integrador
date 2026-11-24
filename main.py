@@ -63,6 +63,8 @@ def parse_args(argv: list | None = None) -> argparse.Namespace:
     parser.add_argument("--baud", type=int, default=115200, help="baudios (def. 115200)")
     parser.add_argument("--sim", action="store_true",
                         help="selecciona el simulador de vuelo al arrancar")
+    parser.add_argument("--web-port", type=int, default=8000,
+                        help="puerto del espejo web LAN para tablet (0 = desactivar)")
     return parser.parse_args(argv)
 
 
@@ -92,6 +94,7 @@ def main(argv: list | None = None) -> int:
         initial_port=args.port,
         initial_baudrate=args.baud,
         force_simulation=args.sim or not SERIAL_AVAILABLE,
+        web_port=args.web_port,
     )
     window.show()
     return app.exec_()

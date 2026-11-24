@@ -24,3 +24,6 @@ grabaciones/
 
 # Pruebas
 .pytest_cache/
+
+# Infraestructura (repositorio independiente)
+infra/

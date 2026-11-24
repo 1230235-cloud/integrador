@@ -106,3 +106,39 @@ def test_cabecera_coincide_con_las_columnas() -> None:
     columnas = protocol.CSV_HEADER.split(",")
     valores = format_csv_row(Telemetry()).split(",")
     assert len(columnas) == len(valores)
+
+
+def test_trama_con_rssi_y_snr_y_tolerancia_nan() -> None:
+    trama_rf = TRAMA_COMPLETA + ",-72.5,8.2"
+    telemetria = parse_telemetry(trama_rf)
+    assert telemetria is not None
+    assert telemetria.rssi == pytest.approx(-72.5)
+    assert telemetria.snr == pytest.approx(8.2)
+
+    # NaN e infinito se sanean sin romper el parseo
+    trama_nan = "T,10.0,nan,22.0,1010.0,8.2,0,0,0,1,0,0,5,inf,0,-1,-1,nan,7.5"
+    saneada = parse_telemetry(trama_nan)
+    assert saneada is not None
+    assert saneada.altitude == 0.0
+    assert saneada.velocity == 0.0
+    assert saneada.rssi is None
+    assert saneada.snr == pytest.approx(7.5)
+
+
+def test_grabacion_csv_y_jsonl(tmp_path) -> None:
+    import json
+    from gs.recording import CsvRecorder
+
+    csv_path = tmp_path / "prueba.csv"
+    rec = CsvRecorder()
+    assert rec.start(str(csv_path)) is True
+    rec.write(Telemetry(t=1.5, altitude=120.0, rssi=-68.0, snr=9.5))
+    assert rec.stop() == 1
+
+    jsonl_path = tmp_path / "prueba.jsonl"
+    assert csv_path.exists()
+    assert jsonl_path.exists()
+    data = json.loads(jsonl_path.read_text(encoding="utf-8").strip())
+    assert data["altitude_m"] == pytest.approx(120.0)
+    assert data["rssi_dbm"] == pytest.approx(-68.0)
+    assert data["snr_db"] == pytest.approx(9.5)

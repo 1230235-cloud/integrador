@@ -38,6 +38,7 @@ Tramas de estado/respuesta aceptadas y mostradas en consola:
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -83,6 +84,8 @@ class Telemetry:
     accel: float = 0.0
     sec_distance: float = -1.0
     sec_bearing: float = -1.0
+    rssi: Optional[float] = None
+    snr: Optional[float] = None
     received_at: float = field(default_factory=time.time)
 
     @property
@@ -144,7 +147,14 @@ def parse_telemetry(line: str) -> Optional[Telemetry]:
     def num(index: int, name: str, default: float = 0.0) -> float:
         if index >= len(fields) or fields[index].strip() == "":
             return default
-        return _to_float(fields[index], name)
+        val = _to_float(fields[index], name)
+        return val if math.isfinite(val) else default
+
+    def opt_num(index: int, name: str) -> Optional[float]:
+        if index >= len(fields) or fields[index].strip() == "":
+            return None
+        val = _to_float(fields[index], name)
+        return val if math.isfinite(val) else None
 
     telemetry = Telemetry(
         t=num(0, "t"),
@@ -163,6 +173,8 @@ def parse_telemetry(line: str) -> Optional[Telemetry]:
         accel=num(13, "acc", 0.0),
         sec_distance=num(14, "sec_dist", -1.0),
         sec_bearing=num(15, "sec_bear", -1.0),
+        rssi=opt_num(16, "rssi"),
+        snr=opt_num(17, "snr"),
     )
 
     for name in ("pitch", "roll", "yaw"):
@@ -207,11 +219,39 @@ def format_csv_row(telemetry: Telemetry) -> str:
         f"{telemetry.accel:.2f}",
         f"{telemetry.sec_distance:.1f}",
         f"{telemetry.sec_bearing:.1f}",
+        "" if telemetry.rssi is None else f"{telemetry.rssi:.1f}",
+        "" if telemetry.snr is None else f"{telemetry.snr:.1f}",
     ])
+
+
+def telemetry_to_dict(telemetry: Telemetry) -> dict:
+    """Serializa un paquete a diccionario listo para JSONL."""
+    return {
+        "mission_time_s": round(telemetry.t, 2),
+        "altitude_m": round(telemetry.altitude, 2),
+        "temperature_c": round(telemetry.temperature, 2),
+        "pressure_hpa": round(telemetry.pressure, 2),
+        "voltage_v": round(telemetry.voltage, 3),
+        "pitch_deg": round(telemetry.pitch, 2),
+        "roll_deg": round(telemetry.roll, 2),
+        "yaw_deg": round(telemetry.yaw, 2),
+        "state": telemetry.state,
+        "satellite": telemetry.satellite,
+        "chute": telemetry.chute,
+        "packet": telemetry.packet,
+        "velocity_ms": round(telemetry.velocity, 2),
+        "accel_ms2": round(telemetry.accel, 2),
+        "secondary_distance_m": round(telemetry.sec_distance, 1),
+        "secondary_bearing_deg": round(telemetry.sec_bearing, 1),
+        "rssi_dbm": None if telemetry.rssi is None else round(telemetry.rssi, 1),
+        "snr_db": None if telemetry.snr is None else round(telemetry.snr, 1),
+        "received_at": round(telemetry.received_at, 3),
+    }
 
 
 CSV_HEADER = (
     "mission_time_s,altitude_m,temperature_c,pressure_hpa,voltage_v,"
     "pitch_deg,roll_deg,yaw_deg,state,satellite,chute,packet,"
-    "velocity_ms,accel_ms2,secondary_distance_m,secondary_bearing_deg"
+    "velocity_ms,accel_ms2,secondary_distance_m,secondary_bearing_deg,"
+    "rssi_dbm,snr_db"
 )
