@@ -40,16 +40,37 @@ constexpr int PIN_LORA_RST  = 12;
 constexpr int PIN_LORA_BUSY = 13;
 
 // ============================================================================
-// PARÁMETROS LORA (IDÉNTICOS A cansat_tx.ino)
+// PARÁMETROS LORA ALTA VELOCIDAD (IDÉNTICOS A cansat_tx.ino)
 // ============================================================================
 constexpr float    LORA_FREQ_MHZ  = 915.0f;
-constexpr float    LORA_BW_KHZ    = 125.0f;
+constexpr float    LORA_BW_KHZ    = 500.0f;
 constexpr uint8_t  LORA_SF        = 7;
 constexpr uint8_t  LORA_CR        = 5;
 constexpr uint8_t  LORA_SYNC_WORD = 0x34;
 constexpr int8_t   LORA_POWER_DBM = 20;
-constexpr uint16_t LORA_PREAMBLE  = 8;
+constexpr uint16_t LORA_PREAMBLE  = 6;
 constexpr float    LORA_TCXO_V    = 1.8f;
+
+constexpr uint8_t FRAME_MAGIC = 0xC5;
+
+#pragma pack(push, 1)
+struct TelemetryFrame {
+  uint8_t  magic;
+  uint8_t  state_flags;
+  uint16_t packet;
+  uint32_t t_ms;
+  int32_t  alt_cm;
+  int16_t  vel_cms;
+  int16_t  acc_cms2;
+  int16_t  temp_c100;
+  uint32_t pres_pa;
+  uint16_t volt_mv;
+  int16_t  pitch_cdeg;
+  int16_t  roll_cdeg;
+  uint16_t yaw_cdeg;
+};
+#pragma pack(pop)
+static_assert(sizeof(TelemetryFrame) == 30, "TelemetryFrame debe medir 30 bytes");
 
 constexpr uint32_t SERIAL_BAUD    = 115200;
 constexpr uint32_t LINK_TIMEOUT_MS = 3500;
@@ -153,8 +174,14 @@ static void processIncomingLora(uint32_t nowMs) {
   if (!rxPacketFlag) return;
   rxPacketFlag = false;
 
-  String raw;
-  const int16_t st = radio.readData(raw);
+  uint8_t buf[64];
+  const size_t len = radio.getPacketLength();
+  if (len == 0 || len > sizeof(buf)) {
+    radio.startReceive();
+    return;
+  }
+
+  const int16_t st = radio.readData(buf, len);
   radio.startReceive();
 
   if (st != RADIOLIB_ERR_NONE) {
@@ -163,9 +190,6 @@ static void processIncomingLora(uint32_t nowMs) {
     }
     return;
   }
-
-  raw.trim();
-  if (raw.length() == 0) return;
 
   lastRssiDbm = radio.getRSSI();
   lastSnrDb   = radio.getSNR();
@@ -177,11 +201,48 @@ static void processIncomingLora(uint32_t nowMs) {
     Serial.println("E,enlace con el CanSat establecido");
   }
 
-  if (raw.startsWith("T,")) {
-    // Anexa RSSI y SNR al final de la trama CSV de 16 campos
-    Serial.printf("%s,%.1f,%.1f\r\n", raw.c_str(), lastRssiDbm, lastSnrDb);
-    lastSummary = raw.substring(0, min<unsigned int>(raw.length(), 20));
-  } else {
+  // Trama binaria de alta velocidad (30 bytes) -> reemite CSV limpio por USB
+  if (len == sizeof(TelemetryFrame) && buf[0] == FRAME_MAGIC) {
+    TelemetryFrame f{};
+    memcpy(&f, buf, sizeof(f));
+    const unsigned state = f.state_flags & 0x0F;
+    const unsigned sat   = (f.state_flags & (1u << 4)) ? 1u : 0u;
+    const unsigned chute = (f.state_flags & (1u << 5)) ? 1u : 0u;
+    const float altM     = f.alt_cm / 100.0f;
+
+    Serial.printf(
+        "T,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%u,%u,%u,%.2f,%.2f,-1,-1,%.1f,%.1f\r\n",
+        f.t_ms / 1000.0f,
+        altM,
+        f.temp_c100 / 100.0f,
+        f.pres_pa / 100.0f,
+        f.volt_mv / 1000.0f,
+        f.pitch_cdeg / 100.0f,
+        f.roll_cdeg / 100.0f,
+        f.yaw_cdeg / 100.0f,
+        state,
+        sat,
+        chute,
+        static_cast<unsigned>(f.packet),
+        f.vel_cms / 100.0f,
+        f.acc_cms2 / 100.0f,
+        lastRssiDbm,
+        lastSnrDb);
+
+    char sum[24];
+    snprintf(sum, sizeof(sum), "Alt:%.1fm S:%u %s", altM, state, chute ? "OPEN" : "ARM");
+    lastSummary = sum;
+    return;
+  }
+
+  // Respaldo: tramas de texto/eventos
+  String raw;
+  raw.reserve(len);
+  for (size_t i = 0; i < len; i++) {
+    raw += static_cast<char>(buf[i]);
+  }
+  raw.trim();
+  if (raw.length() > 0) {
     Serial.printf("%s\r\n", raw.c_str());
   }
 }

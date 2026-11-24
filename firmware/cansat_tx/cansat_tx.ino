@@ -75,16 +75,39 @@ constexpr int PIN_BATTERY = 1;   // ADC1_CH0 a través de divisor resistivo
 constexpr float BATTERY_DIVIDER = 2.0f;  // (R1 + R2) / R2
 
 // ============================================================================
-// PARÁMETROS LORA (DEBEN SER IDÉNTICOS EN cansat_tx.ino Y ground_rx.ino)
+// PARÁMETROS LORA ALTA VELOCIDAD (IDÉNTICOS EN cansat_tx.ino Y ground_rx.ino)
 // ============================================================================
-constexpr float   LORA_FREQ_MHZ   = 915.0f;
-constexpr float   LORA_BW_KHZ     = 125.0f;
-constexpr uint8_t LORA_SF         = 7;
-constexpr uint8_t LORA_CR         = 5;     // 4/5
-constexpr uint8_t LORA_SYNC_WORD  = 0x34;
-constexpr int8_t  LORA_POWER_DBM  = 20;    // 20 dBm seguro para pruebas y vuelo
-constexpr uint16_t LORA_PREAMBLE  = 8;
-constexpr float   LORA_TCXO_V     = 1.8f;
+// BW 500 kHz + SF7 + trama binaria de 30 B => ~14 ms en el aire (>2 km LOS),
+// permitiendo transmitir a 25 Hz (~60 paquetes en una caída de 2.5 s).
+constexpr float    LORA_FREQ_MHZ  = 915.0f;
+constexpr float    LORA_BW_KHZ    = 500.0f;
+constexpr uint8_t  LORA_SF        = 7;
+constexpr uint8_t  LORA_CR        = 5;     // 4/5
+constexpr uint8_t  LORA_SYNC_WORD = 0x34;
+constexpr int8_t   LORA_POWER_DBM = 20;
+constexpr uint16_t LORA_PREAMBLE  = 6;
+constexpr float    LORA_TCXO_V    = 1.8f;
+
+constexpr uint8_t FRAME_MAGIC = 0xC5;
+
+#pragma pack(push, 1)
+struct TelemetryFrame {
+  uint8_t  magic;        // 0xC5
+  uint8_t  state_flags;  // bits 0..3: estado, bit 4: secundaria, bit 5: autogiro
+  uint16_t packet;
+  uint32_t t_ms;
+  int32_t  alt_cm;
+  int16_t  vel_cms;
+  int16_t  acc_cms2;
+  int16_t  temp_c100;
+  uint32_t pres_pa;
+  uint16_t volt_mv;
+  int16_t  pitch_cdeg;
+  int16_t  roll_cdeg;
+  uint16_t yaw_cdeg;
+};
+#pragma pack(pop)
+static_assert(sizeof(TelemetryFrame) == 30, "TelemetryFrame debe medir 30 bytes");
 
 // ============================================================================
 // PERFIL DE VUELO (1 = PRUEBA DESDE 30 m | 0 = COMPETENCIA OFICIAL 450 m)
@@ -121,9 +144,10 @@ constexpr float SERVO_DELAY_S       = 0.35f;
 constexpr float SERVO_ANGLE_CLOSED  = 0.0f;
 constexpr float SERVO_ANGLE_OPEN    = 85.0f;
 
-constexpr uint32_t SAMPLE_PERIOD_MS = 20;   // 50 Hz sensores
-constexpr uint32_t TX_PERIOD_MS     = 250;  // 4 Hz telemetría en vuelo
-constexpr uint32_t OLED_PERIOD_MS   = 500;  // 2 Hz refresco OLED
+constexpr uint32_t SAMPLE_PERIOD_MS    = 15;   // ~66 Hz sensores
+constexpr uint32_t TX_PERIOD_PRE_MS    = 200;  // 5 Hz en tierra (con ventana de comandos)
+constexpr uint32_t TX_PERIOD_FLIGHT_MS = 40;   // 25 Hz en ascenso y caída (~60 pkts en 2.5 s)
+constexpr uint32_t OLED_PERIOD_MS      = 500;  // 2 Hz refresco OLED (pausado en descenso)
 
 // Filtro alpha-beta para altitud y velocidad vertical
 constexpr float FILTER_ALPHA = 0.45f;
@@ -461,36 +485,33 @@ static void transmitTelemetry(uint32_t nowMs) {
   if (!loraReady) return;
 
   packetCounter++;
-  const float missionSec = (nowMs - missionStartMs) / 1000.0f;
 
-  // Formato CSV compatible con gs/protocol.py (16 campos + prefijo "T")
-  // ground_rx.ino anexará ",<rssi>,<snr>" antes de enviarlo por USB.
-  char payload[180];
-  snprintf(
-      payload, sizeof(payload),
-      "T,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%u,%u,%lu,%.2f,%.2f,-1,-1",
-      missionSec,
-      altitudeM,
-      temperatureC,
-      pressureHpa,
-      voltageV,
-      pitchDeg,
-      rollDeg,
-      yawDeg,
-      static_cast<unsigned>(missionState),
-      secondaryFree ? 1u : 0u,
-      chuteDeployed ? 1u : 0u,
-      static_cast<unsigned long>(packetCounter),
-      velocityMs,
-      accelVertMs2);
+  TelemetryFrame f{};
+  f.magic = FRAME_MAGIC;
+  f.state_flags = static_cast<uint8_t>(missionState & 0x0F) |
+                  (secondaryFree ? (1u << 4) : 0u) |
+                  (chuteDeployed ? (1u << 5) : 0u);
+  f.packet     = static_cast<uint16_t>(packetCounter & 0xFFFF);
+  f.t_ms       = nowMs - missionStartMs;
+  f.alt_cm     = static_cast<int32_t>(lroundf(altitudeM * 100.0f));
+  f.vel_cms    = static_cast<int16_t>(constrain(lroundf(velocityMs * 100.0f), -32000L, 32000L));
+  f.acc_cms2   = static_cast<int16_t>(constrain(lroundf(accelVertMs2 * 100.0f), -32000L, 32000L));
+  f.temp_c100  = static_cast<int16_t>(constrain(lroundf(temperatureC * 100.0f), -32000L, 32000L));
+  f.pres_pa    = static_cast<uint32_t>(constrain(lroundf(pressureHpa * 100.0f), 0L, 200000L));
+  f.volt_mv    = static_cast<uint16_t>(constrain(lroundf(voltageV * 1000.0f), 0L, 65000L));
+  f.pitch_cdeg = static_cast<int16_t>(constrain(lroundf(pitchDeg * 100.0f), -32000L, 32000L));
+  f.roll_cdeg  = static_cast<int16_t>(constrain(lroundf(rollDeg * 100.0f), -32000L, 32000L));
+  f.yaw_cdeg   = static_cast<uint16_t>(constrain(lroundf(yawDeg * 100.0f), 0L, 36000L));
 
-  radio.transmit(payload);
-  DBG_PRINTLN(payload);
+  radio.transmit(reinterpret_cast<uint8_t *>(&f), sizeof(f));
 
-  // Ventana breve de escucha para comandos uplink desde ground_rx
-  String rxCmd;
-  if (radio.receive(rxCmd) == RADIOLIB_ERR_NONE && rxCmd.length() > 0) {
-    handleGroundCommand(rxCmd);
+  // Escuchar comandos solo en tierra (PRE/LANDED) para no frenar la caída libre
+  if ((missionState == STATE_PRE || missionState == STATE_LANDED) &&
+      (packetCounter % 3 == 0)) {
+    String rxCmd;
+    if (radio.receive(rxCmd) == RADIOLIB_ERR_NONE && rxCmd.length() > 0) {
+      handleGroundCommand(rxCmd);
+    }
   }
 }
 
@@ -599,13 +620,20 @@ void loop() {
     updateMissionState(nowMs);
   }
 
-  const uint32_t txInterval = (missionState == STATE_DONE) ? 2000UL : TX_PERIOD_MS;
+  uint32_t txInterval = TX_PERIOD_PRE_MS;
+  if (missionState == STATE_ASCENT || missionState == STATE_DESCENT) {
+    txInterval = TX_PERIOD_FLIGHT_MS;  // 25 Hz en vuelo
+  } else if (missionState == STATE_DONE) {
+    txInterval = 2000UL;
+  }
+
   if (nowMs - lastTxMs >= txInterval) {
     lastTxMs = nowMs;
     transmitTelemetry(nowMs);
   }
 
-  if (nowMs - lastOledMs >= OLED_PERIOD_MS) {
+  // Pausar refresco OLED durante el descenso para no perder milisegundos en I2C
+  if (missionState != STATE_DESCENT && (nowMs - lastOledMs >= OLED_PERIOD_MS)) {
     lastOledMs = nowMs;
     refreshOled();
   }
