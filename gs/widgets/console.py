@@ -7,14 +7,13 @@ import time
 from PyQt5.QtGui import QColor, QTextCharFormat, QTextCursor
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
-    QAction,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMenu,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
@@ -110,59 +109,34 @@ class ControlPanel(Panel):
         super().__init__("CONTROL DE MISIÓN", parent)
         self._recording = False
 
-        # Fila compacta: menú desplegable de acciones + botón dedicado de grabación
+        # Fila compacta: desplegable QComboBox de acciones + botón ejecutar + botón grabar
         top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        top_row.setSpacing(6)
 
-        self.menu_btn = _button(
-            "ACCIONES  ▾",
-            "Accent",
-            "Comandos de calibración, despliegue, reinicio y ruta de exportación",
-        )
-        self.menu_btn.setFixedHeight(32)
-        self.menu = QMenu(self)
-        self.menu.setStyleSheet(
-            f"QMenu {{ background: {Colors.BG_PANEL}; color: {Colors.TEXT}; "
-            f"border: 1px solid {Colors.BORDER}; padding: 4px; font-size: 12px; }}"
-            f"QMenu::item {{ padding: 6px 14px; border-radius: 4px; }}"
-            f"QMenu::item:selected {{ background: {Colors.BG_WIDGET}; color: {Colors.ACCENT}; }}"
-            f"QMenu::item:disabled {{ color: {Colors.TEXT_FAINT}; }}"
-            f"QMenu::separator {{ height: 1px; background: {Colors.BORDER}; margin: 4px 8px; }}"
-        )
+        self.action_combo = QComboBox(self)
+        self.action_combo.setFixedHeight(32)
+        self.action_combo.setToolTip("Selecciona un comando de misión y pulsa ▶")
+        self.action_combo.addItem("Calibrar barómetro", protocol.CMD_CALIBRATE)
+        self.action_combo.addItem("Desplegar autogiro", protocol.CMD_DEPLOY_PARENT)
+        self.action_combo.addItem("Reiniciar misión", protocol.CMD_RECOVER)
+        self.action_combo.addItem("Abortar despliegue", protocol.CMD_CUT_PARACHUTE)
+        self.action_combo.addItem("Elegir ruta CSV…", "__BROWSE__")
+        top_row.addWidget(self.action_combo, 1)
 
-        self.action_calib = QAction("Calibrar barómetro  (C,CAL,1)", self)
-        self.action_calib.triggered.connect(lambda: self._send(protocol.CMD_CALIBRATE))
-        self.menu.addAction(self.action_calib)
-
-        self.action_deploy = QAction("Desplegar autogiro  (C,DEP,DEPLOY)", self)
-        self.action_deploy.triggered.connect(lambda: self._send(protocol.CMD_DEPLOY_PARENT))
-        self.menu.addAction(self.action_deploy)
-
-        self.action_reset = QAction("Reiniciar misión  (C,SYS,RESET)", self)
-        self.action_reset.triggered.connect(lambda: self._send(protocol.CMD_RECOVER))
-        self.menu.addAction(self.action_reset)
-
-        self.action_abort = QAction("Abortar despliegue  (C,CHUTE,CUT)", self)
-        self.action_abort.triggered.connect(lambda: self._send(protocol.CMD_CUT_PARACHUTE))
-        self.menu.addAction(self.action_abort)
-
-        self.menu.addSeparator()
-
-        self.action_browse = QAction("Elegir ruta de exportación…", self)
-        self.action_browse.triggered.connect(self._browse)
-        self.menu.addAction(self.action_browse)
-
-        self.menu_btn.setMenu(self.menu)
-        top_row.addWidget(self.menu_btn, 1)
+        self.exec_btn = _button("▶", "Accent", "Ejecuta la acción seleccionada del desplegable")
+        self.exec_btn.setFixedSize(36, 32)
+        self.exec_btn.clicked.connect(self._execute_selected_action)
+        top_row.addWidget(self.exec_btn)
 
         self.record_btn = _button(
             "● GRABAR",
             "Primary",
-            "Inicia o detiene la grabación (CSV + JSONL + Reporte JSON)",
+            "Inicia o detiene la grabación al instante (CSV + JSONL + Reporte JSON)",
         )
         self.record_btn.setFixedHeight(32)
+        self.record_btn.setMinimumWidth(98)
         self.record_btn.clicked.connect(self._toggle_recording)
-        top_row.addWidget(self.record_btn, 1)
+        top_row.addWidget(self.record_btn)
 
         self.body.addLayout(top_row)
 
@@ -196,6 +170,7 @@ class ControlPanel(Panel):
         self.body.addLayout(row3)
 
         self._pending_path = ""
+        self._link_active = False
 
     # ------------------------------------------------------------------ API
     @property
@@ -207,17 +182,18 @@ class ControlPanel(Panel):
         self._toggle_recording()
 
     def set_link_active(self, active: bool) -> None:
-        """Habilita los comandos solo con el enlace abierto."""
-        for action in (self.action_calib, self.action_deploy,
-                       self.action_reset, self.action_abort):
-            action.setEnabled(active)
+        """Habilita el envío de comandos con el enlace abierto; grabar siempre disponible."""
+        self._link_active = bool(active)
         self.send_btn.setEnabled(active)
         self.command_edit.setEnabled(active)
-        self.action_browse.setEnabled(active or self._recording)
+        self.action_combo.setEnabled(True)
+        self.exec_btn.setEnabled(True)
+        self.record_btn.setEnabled(True)
 
     def set_recording(self, recording: bool, path: str = "") -> None:
         """Refleja el estado de la grabación en el botón dedicado y la etiqueta."""
         self._recording = recording
+        self.record_btn.setEnabled(True)
         self.record_btn.setText("■ DETENER" if recording else "● GRABAR")
         self.record_btn.setObjectName("Danger" if recording else "Primary")
         _restyle(self.record_btn)
@@ -225,9 +201,16 @@ class ControlPanel(Panel):
             f"Exportando: {path}" if path else "Exportación: sin grabación activa"
         )
         self.path_label.setToolTip(path or "Sin grabación activa")
-        self.action_browse.setEnabled(not recording)
 
     # -------------------------------------------------------------- internos
+    def _execute_selected_action(self) -> None:
+        data = self.action_combo.currentData()
+        if data == "__BROWSE__":
+            self._browse()
+            return
+        if data:
+            self._send(str(data))
+
     def _send(self, command: str) -> None:
         self.command_edit.setText(command)
         self.command_sent.emit(command)
@@ -241,9 +224,11 @@ class ControlPanel(Panel):
         if self._recording:
             self.record_toggle.emit("")
             return
-        path = self._choose_path()
-        if path:
-            self.record_toggle.emit(path)
+        path = self._pending_path or (
+            f"{DEFAULT_RECORD_DIR}/vuelo_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+        )
+        self._pending_path = ""
+        self.record_toggle.emit(path)
 
     def _choose_path(self) -> str:
         path, _ = QFileDialog.getSaveFileName(
@@ -251,9 +236,11 @@ class ControlPanel(Panel):
             "Guardar telemetría en CSV",
             f"{DEFAULT_RECORD_DIR}/cansat.csv",
             "Archivos CSV (*.csv);;Todos los archivos (*)",
+            options=QFileDialog.DontUseNativeDialog,
         )
         if path:
             self._pending_path = path
+            self.path_label.setText(f"Destino: {path}")
         return path
 
     def _browse(self) -> None:

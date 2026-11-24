@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QScrollArea,
     QSplitter,
     QStatusBar,
     QVBoxLayout,
@@ -136,8 +137,15 @@ class MainWindow(QMainWindow):
         self.controls = ControlPanel(self)
         layout.addWidget(self.controls)
         layout.addStretch(1)
-        column.setFixedWidth(392)
-        return column
+        column.setFixedWidth(388)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFixedWidth(404)
+        scroll.setWidget(column)
+        return scroll
 
     def _build_team_banner(self) -> QFrame:
         """Cabecera con la insignia del equipo Pepe el Pollo."""
