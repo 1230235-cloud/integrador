@@ -181,6 +181,9 @@ float rollDeg  = 0.0f;
 float yawDeg   = 0.0f;
 
 float qW = 1.0f, qX = 0.0f, qY = 0.0f, qZ = 0.0f;
+// Cuaternión conjugado de tara (cancela cualquier ángulo de montaje del BNO08x)
+float tareQW = 1.0f, tareQX = 0.0f, tareQY = 0.0f, tareQZ = 0.0f;
+bool imuTared = false;
 
 // ============================================================================
 // UTILIDADES
@@ -247,6 +250,26 @@ static void enableImuReports() {
   if (!imuReady) return;
   bno08x.enableReport(SH2_ROTATION_VECTOR, 20000);       // 50 Hz
   bno08x.enableReport(SH2_LINEAR_ACCELERATION, 20000);   // 50 Hz
+}
+
+static void quatMul(float aw, float ax, float ay, float az,
+                    float bw, float bx, float by, float bz,
+                    float &ow, float &ox, float &oy, float &oz) {
+  ow = aw * bw - ax * bx - ay * by - az * bz;
+  ox = aw * bx + ax * bw + ay * bz - az * by;
+  oy = aw * by - ax * bz + ay * bw + az * bx;
+  oz = aw * bz + ax * by - ay * bx + az * bw;
+}
+
+static void tareImuFromCurrent() {
+  const float norm = sqrtf(qW * qW + qX * qX + qY * qY + qZ * qZ);
+  if (isfinite(norm) && norm > 0.1f) {
+    tareQW =  qW / norm;
+    tareQX = -qX / norm;
+    tareQY = -qY / norm;
+    tareQZ = -qZ / norm;
+    imuTared = true;
+  }
 }
 
 static void quatToEulerDeg(float qr, float qi, float qj, float qk,
@@ -325,7 +348,13 @@ static void pollSensors(uint32_t nowMs) {
         const float k = imuEvent.un.rotationVector.k;
         if (isfinite(r) && isfinite(i) && isfinite(j) && isfinite(k)) {
           qW = r; qX = i; qY = j; qZ = k;
-          quatToEulerDeg(qW, qX, qY, qZ, pitchDeg, rollDeg, yawDeg);
+          if (!imuTared) {
+            tareImuFromCurrent();
+          }
+          // q_rel = q_sensor * q_tare_conj: cancela cualquier inclinación de montaje
+          float rw, rx, ry, rz;
+          quatMul(qW, qX, qY, qZ, tareQW, tareQX, tareQY, tareQZ, rw, rx, ry, rz);
+          quatToEulerDeg(rw, rx, ry, rz, pitchDeg, rollDeg, yawDeg);
         }
       } else if (imuEvent.sensorId == SH2_LINEAR_ACCELERATION) {
         const float ax = imuEvent.un.linearAcceleration.x;
@@ -411,6 +440,7 @@ static void updateMissionState(uint32_t nowMs) {
 static void handleGroundCommand(const String &cmd) {
   if (cmd.indexOf("CAL") >= 0) {
     calibrateBarometer();
+    tareImuFromCurrent();
   } else if (cmd.indexOf("DEP") >= 0) {
     deployAutogyro();
   } else if (cmd.indexOf("CUT") >= 0 || cmd.indexOf("ABORT") >= 0) {
