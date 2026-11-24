@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import math
 import os
 
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QKeySequence, QPixmap
+from PyQt5.QtCore import QPointF, QRectF, Qt, QTimer
+from PyQt5.QtGui import (
+    QColor,
+    QKeySequence,
+    QLinearGradient,
+    QPainter,
+    QPixmap,
+    QTransform,
+)
 from PyQt5.QtWidgets import (
     QAction,
     QFrame,
@@ -121,15 +129,7 @@ class MainWindow(QMainWindow):
         logo_fallback = os.path.join(root_dir, "docs", "insignia-pepe-el-pollo.png")
         logo_path = logo_nobg if os.path.exists(logo_nobg) else logo_fallback
 
-        logo_lbl = QLabel(bar)
-        logo_lbl.setFixedSize(48, 48)
-        logo_lbl.setAlignment(Qt.AlignCenter)
-        logo_lbl.setStyleSheet("background: transparent; border: none;")
-        if os.path.exists(logo_path):
-            pix = QPixmap(logo_path).scaled(
-                48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            logo_lbl.setPixmap(pix)
+        logo_lbl = SpinningBadge3D(logo_path, size=52, parent=bar)
         row.addWidget(logo_lbl)
 
         text_col = QVBoxLayout()
@@ -475,3 +475,97 @@ def _status_label(text: str, color: str) -> QLabel:
     label = QLabel(text)
     label.setStyleSheet(f"color: {color}; font-family: Consolas, monospace; font-size: 11px;")
     return label
+
+
+class SpinningBadge3D(QWidget):
+    """Medallón 3D giratorio que preserva el arte original PNG de la insignia."""
+
+    def __init__(self, image_path: str, size: int = 52, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(size + 8, size + 4)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._size = size
+        self._angle = 0.0
+        self._pixmap = QPixmap()
+        self._edge_pixmap = QPixmap()
+
+        if os.path.exists(image_path):
+            raw = QPixmap(image_path)
+            if not raw.isNull():
+                # Renderizado a 2x para máxima nitidez al rotar
+                self._pixmap = raw.scaled(
+                    size * 2, size * 2, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                # Silueta acero azulado oscuro para simular el grosor metálico del borde
+                edge = QPixmap(self._pixmap.size())
+                edge.fill(Qt.transparent)
+                p = QPainter(edge)
+                p.drawPixmap(0, 0, self._pixmap)
+                p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+                p.fillRect(edge.rect(), QColor(42, 74, 110, 235))
+                p.end()
+                self._edge_pixmap = edge
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(33)  # ~30 FPS suave
+
+    def _tick(self) -> None:
+        self._angle = (self._angle + 1.8) % 360.0
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (API Qt)
+        if self._pixmap.isNull():
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+        rad = math.radians(self._angle)
+        cos_a = math.cos(rad)
+        sin_a = math.sin(rad)
+
+        # Escala horizontal proyectada + espesor de moneda en los cantos
+        scale_x = max(0.06, abs(cos_a))
+        draw_w = self._size
+        draw_h = self._size
+        target = QRectF(-draw_w / 2.0, -draw_h / 2.0, draw_w, draw_h)
+
+        # 1. Capas de canto metálico (profundidad 3D al girar de perfil)
+        depth_px = 4.2 * abs(sin_a)
+        side_dir = -1.0 if sin_a >= 0 else 1.0
+        for layer in range(4, 0, -1):
+            offset_x = side_dir * depth_px * (layer / 4.0)
+            painter.save()
+            painter.translate(cx + offset_x, cy)
+            tf = QTransform()
+            tf.scale(scale_x, 1.0)
+            painter.setTransform(tf, True)
+            painter.drawPixmap(target, self._edge_pixmap, QRectF(self._edge_pixmap.rect()))
+            painter.restore()
+
+        # 2. Cara principal con el arte original íntegro (legible en ambos lados)
+        painter.save()
+        painter.translate(cx, cy)
+        tf = QTransform()
+        tf.scale(scale_x, 1.0)
+        painter.setTransform(tf, True)
+        painter.drawPixmap(target, self._pixmap, QRectF(self._pixmap.rect()))
+
+        # 3. Reflejo metálico sutil al cruzar el ángulo frontal
+        sheen = max(0.0, abs(cos_a) - 0.55) / 0.45
+        if sheen > 0.01:
+            grad = QLinearGradient(QPointF(-draw_w / 2.0, -draw_h / 2.0),
+                                   QPointF(draw_w / 2.0, draw_h / 2.0))
+            alpha = int(55 * sheen)
+            grad.setColorAt(0.0, QColor(255, 255, 255, 0))
+            grad.setColorAt(0.45, QColor(210, 232, 255, alpha))
+            grad.setColorAt(0.55, QColor(255, 255, 255, 0))
+            grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+            painter.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+            painter.fillRect(target, grad)
+        painter.restore()
+        painter.end()
