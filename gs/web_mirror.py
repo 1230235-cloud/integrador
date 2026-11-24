@@ -8,6 +8,7 @@ CDNs ni conexión a internet. Funciona en cualquier hotspot Wi-Fi local.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import socket
 import threading
@@ -17,6 +18,9 @@ from typing import Optional
 
 from .protocol import Telemetry, telemetry_to_dict
 
+_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_LOGO_PATH = os.path.join(_ROOT_DIR, "docs", "insignia-pepe-el-pollo-nobg.png")
+
 _DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -25,17 +29,29 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 <title>CanSat · Pepe el Pollo · Tablet</title>
 <style>
   :root{
-    --bg:#0b111a; --card:#131d2b; --border:#23344a; --text:#e6eef8;
-    --dim:#8aa0b8; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
+    --bg:#080e17; --card:#0f1826; --widget:#152234; --border:#2a415e; --text:#dde7f2;
+    --dim:#8ea4bc; --accent:#5b9bd5; --ok:#2e9e6e; --warn:#c89643; --err:#c4525a;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;padding:12px}
-  header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;
-         padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:12px}
-  h1{font-size:16px;letter-spacing:.4px}
-  .pill{font-family:monospace;font-size:12px;padding:4px 10px;border-radius:999px;background:#1b293c;color:var(--dim)}
-  .pill.ok{background:#0f2e1d;color:var(--ok)}
-  .pill.warn{background:#33240d;color:var(--warn)}
+  header{position:sticky;top:8px;z-index:10;display:flex;flex-wrap:wrap;align-items:center;
+         justify-content:space-between;gap:10px;padding:10px 14px;background:var(--card);
+         border:1px solid var(--border);border-radius:10px;margin-bottom:12px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .badge3d-wrap{width:48px;height:48px;perspective:420px;flex-shrink:0}
+  .badge3d{width:100%;height:100%;position:relative;transform-style:preserve-3d;
+           animation:spin3d 6s linear infinite}
+  .badge3d img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+               filter:drop-shadow(0 0 3px rgba(91,155,213,.35))}
+  .badge3d .back{transform:rotateY(180deg) translateZ(2px);filter:brightness(.82)}
+  .badge3d .front{transform:translateZ(2px)}
+  @keyframes spin3d{from{transform:rotateY(0deg)}to{transform:rotateY(360deg)}}
+  h1{font-size:15px;letter-spacing:1px}
+  .brand-sub{font-size:11px;color:var(--accent);margin-top:2px}
+  .pill{font-family:monospace;font-size:12px;padding:4px 10px;border-radius:999px;background:var(--widget);
+        border:1px solid var(--border);color:var(--dim)}
+  .pill.ok{background:#122e22;border-color:#2e9e6e;color:#7de0b4}
+  .pill.warn{background:#2e2412;border-color:#c89643;color:#e5bd73}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-bottom:12px}
   .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
   .lbl{font-size:11px;color:var(--dim);letter-spacing:.6px}
@@ -45,12 +61,23 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
   @media (max-width:820px){.panels{grid-template-columns:1fr}}
   .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px}
   .panel h2{font-size:12px;color:var(--dim);margin-bottom:8px;letter-spacing:.7px;display:flex;justify-content:space-between}
-  canvas{width:100%;height:260px;display:block;background:#0e1622;border-radius:8px}
+  canvas{width:100%;height:260px;display:block;background:#0c1522;border:1px solid #1e3148;border-radius:8px}
 </style>
 </head>
 <body>
 <header>
-  <h1>CanSat · Pepe el Pollo · Estación Tablet (LAN)</h1>
+  <div class="brand">
+    <div class="badge3d-wrap">
+      <div class="badge3d">
+        <img class="front" src="/logo.png" alt="Pepe el Pollo">
+        <img class="back"  src="/logo.png" alt="Pepe el Pollo">
+      </div>
+    </div>
+    <div>
+      <h1>PEPE EL POLLO</h1>
+      <div class="brand-sub">CanSat · Estación Tablet (LAN Offline)</div>
+    </div>
+  </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <span id="badge-link" class="pill">CONECTANDO...</span>
     <span id="badge-stage" class="pill">ACOPLADO</span>
@@ -289,6 +316,19 @@ class WebMirrorServer:
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                    return
+
+                if self.path == "/logo.png":
+                    if os.path.exists(_LOGO_PATH):
+                        data = open(_LOGO_PATH, "rb").read()
+                        self.send_response(HTTPStatus.OK)
+                        self.send_header("Content-Type", "image/png")
+                        self.send_header("Cache-Control", "max-age=3600")
+                        self.send_header("Content-Length", str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
+                    self.send_error(HTTPStatus.NOT_FOUND)
                     return
 
                 if self.path == "/events":
