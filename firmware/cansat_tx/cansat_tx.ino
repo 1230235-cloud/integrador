@@ -87,14 +87,37 @@ constexpr uint16_t LORA_PREAMBLE  = 8;
 constexpr float   LORA_TCXO_V     = 1.8f;
 
 // ============================================================================
-// PARÁMETROS DE MISIÓN Y DESPLIEGUE
+// PERFIL DE VUELO (1 = PRUEBA DESDE 30 m | 0 = COMPETENCIA OFICIAL 450 m)
 // ============================================================================
-constexpr float ALT_DEPLOY_TARGET_M = 200.0f;
-constexpr float ALT_MIN_ARM_M       = 300.0f;  // Altura mínima alcanzada para armar despliegue
-constexpr float ALT_FORCE_DEPLOY_M  = 150.0f;
-constexpr float SERVO_DELAY_S       = 0.35f;
-constexpr float DEPLOY_MARGIN_M     = 2.0f;
+#define MODO_PRUEBA_30M 1
 
+#if MODO_PRUEBA_30M
+  // Perfil de prueba desde ~30 m: armado temprano y despliegue inmediato al soltar
+  constexpr const char *FLIGHT_MODE_TAG = "30M";
+  constexpr float ALT_ASCENT_TRIGGER_M  = 6.0f;
+  constexpr float VEL_ASCENT_MIN_MS     = 1.0f;
+  constexpr uint32_t ASCENT_HOLD_MS     = 600;
+  constexpr uint32_t APOGEE_HOLD_MS     = 250;
+  constexpr float ALT_MIN_ARM_M         = 12.0f;  // Arma al superar 12 m
+  constexpr float ALT_DEPLOY_TARGET_M   = 24.0f;  // Despliega apenas inicia la caída desde 30 m
+  constexpr float ALT_FORCE_DEPLOY_M    = 18.0f;  // Respaldo forzado si aún no abrió
+  constexpr float VEL_FALL_TRIGGER_MS   = -1.5f;
+  constexpr float DEPLOY_MARGIN_M       = 1.5f;
+#else
+  // Perfil oficial PEUUM: suelta a 450 m, despliegue de autogiro a 200 m
+  constexpr const char *FLIGHT_MODE_TAG = "450M";
+  constexpr float ALT_ASCENT_TRIGGER_M  = 15.0f;
+  constexpr float VEL_ASCENT_MIN_MS     = 1.5f;
+  constexpr uint32_t ASCENT_HOLD_MS     = 1200;
+  constexpr uint32_t APOGEE_HOLD_MS     = 800;
+  constexpr float ALT_MIN_ARM_M         = 300.0f;
+  constexpr float ALT_DEPLOY_TARGET_M   = 200.0f;
+  constexpr float ALT_FORCE_DEPLOY_M    = 150.0f;
+  constexpr float VEL_FALL_TRIGGER_MS   = -3.0f;
+  constexpr float DEPLOY_MARGIN_M       = 2.0f;
+#endif
+
+constexpr float SERVO_DELAY_S       = 0.35f;
 constexpr float SERVO_ANGLE_CLOSED  = 0.0f;
 constexpr float SERVO_ANGLE_OPEN    = 85.0f;
 
@@ -324,8 +347,8 @@ static void updateMissionState(uint32_t nowMs) {
 
   switch (missionState) {
     case STATE_PRE:
-      if (altitudeM > 15.0f && velocityMs > 1.5f) {
-        if (inStateMs >= 1200) {
+      if (altitudeM > ALT_ASCENT_TRIGGER_M && velocityMs > VEL_ASCENT_MIN_MS) {
+        if (inStateMs >= ASCENT_HOLD_MS) {
           missionState = STATE_ASCENT;
           stateEnteredMs = nowMs;
         }
@@ -336,7 +359,7 @@ static void updateMissionState(uint32_t nowMs) {
 
     case STATE_ASCENT:
       if (velocityMs < -0.5f) {
-        if (inStateMs >= 800) {
+        if (inStateMs >= APOGEE_HOLD_MS) {
           missionState = STATE_DESCENT;
           stateEnteredMs = nowMs;
         }
@@ -349,7 +372,7 @@ static void updateMissionState(uint32_t nowMs) {
       const float leadM = fabsf(velocityMs) * SERVO_DELAY_S;
       const float triggerM = ALT_DEPLOY_TARGET_M + leadM + DEPLOY_MARGIN_M;
       const bool validFlight = maxAltitudeM > ALT_MIN_ARM_M;
-      const bool falling = velocityMs < -3.0f;
+      const bool falling = velocityMs < VEL_FALL_TRIGGER_MS;
 
       if (!deployAborted && !chuteDeployed && validFlight && falling && altitudeM <= triggerM) {
         deployAutogyro();
@@ -448,8 +471,9 @@ static void refreshOled() {
   display.setFont(ArialMT_Plain_10);
   display.setTextAlignment(TEXT_ALIGN_LEFT);
 
-  snprintf(line, sizeof(line), "CanSat TX S:%u %s",
-           static_cast<unsigned>(missionState), chuteDeployed ? "OPEN" : "ARM");
+  snprintf(line, sizeof(line), "TX[%s] S:%u %s",
+           FLIGHT_MODE_TAG, static_cast<unsigned>(missionState),
+           chuteDeployed ? "OPEN" : "ARM");
   display.drawString(0, 0, line);
 
   snprintf(line, sizeof(line), "BMP:%s IMU:%s RF:%s",
