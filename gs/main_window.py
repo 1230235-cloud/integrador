@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QPushButton,
     QScrollArea,
     QSplitter,
     QStatusBar,
@@ -88,22 +89,95 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         central = QWidget(self)
-        root = QHBoxLayout(central)
-        root.setContentsMargins(10, 10, 10, 6)
-        root.setSpacing(10)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(10, 8, 10, 6)
+        outer.setSpacing(8)
 
-        root.addWidget(self._build_left_column(), 0)
-        root.addWidget(self._build_right_area(), 1)
+        # Barra superior estática: insignia sin fondo + controles de vista
+        outer.addWidget(self._build_top_bar(), 0)
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(10)
+
+        self.left_panel = self._build_left_column()
+        body.addWidget(self.left_panel, 0)
+        body.addWidget(self._build_right_area(), 1)
+        outer.addLayout(body, 1)
 
         self.setCentralWidget(central)
+
+    def _build_top_bar(self) -> QFrame:
+        """Barra superior fija con insignia transparente y toggles de vista."""
+        bar = QFrame(self)
+        bar.setObjectName("Panel")
+        bar.setFixedHeight(64)
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(12, 6, 12, 6)
+        row.setSpacing(12)
+
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        logo_nobg = os.path.join(root_dir, "docs", "insignia-pepe-el-pollo-nobg.png")
+        logo_fallback = os.path.join(root_dir, "docs", "insignia-pepe-el-pollo.png")
+        logo_path = logo_nobg if os.path.exists(logo_nobg) else logo_fallback
+
+        logo_lbl = QLabel(bar)
+        logo_lbl.setFixedSize(48, 48)
+        logo_lbl.setAlignment(Qt.AlignCenter)
+        logo_lbl.setStyleSheet("background: transparent; border: none;")
+        if os.path.exists(logo_path):
+            pix = QPixmap(logo_path).scaled(
+                48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            logo_lbl.setPixmap(pix)
+        row.addWidget(logo_lbl)
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(1)
+        title = QLabel("PEPE EL POLLO", bar)
+        title.setStyleSheet(
+            f"font-size: 15px; font-weight: bold; letter-spacing: 1.5px; color: {Colors.TEXT};"
+        )
+        subtitle = QLabel("CanSat · Estación Terrestre · FITEC", bar)
+        subtitle.setStyleSheet(f"font-size: 11px; color: {Colors.ACCENT};")
+        text_col.addWidget(title)
+        text_col.addWidget(subtitle)
+        row.addLayout(text_col)
+
+        row.addStretch(1)
+
+        self.btn_toggle_link = QPushButton("Ocultar enlace", bar)
+        self.btn_toggle_link.setCheckable(True)
+        self.btn_toggle_link.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle_link.setToolTip(
+            "Oculta el panel lateral de enlace para ver las gráficas en grande"
+        )
+        self.btn_toggle_link.toggled.connect(self._toggle_left_panel)
+        row.addWidget(self.btn_toggle_link)
+
+        self.btn_toggle_console = QPushButton("Ocultar consola", bar)
+        self.btn_toggle_console.setCheckable(True)
+        self.btn_toggle_console.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle_console.setToolTip("Oculta o muestra la consola de comunicaciones")
+        self.btn_toggle_console.toggled.connect(self._toggle_console_panel)
+        row.addWidget(self.btn_toggle_console)
+
+        return bar
+
+    def _toggle_left_panel(self, hidden: bool) -> None:
+        self.left_panel.setVisible(not hidden)
+        self.btn_toggle_link.setText("Mostrar enlace" if hidden else "Ocultar enlace")
+
+    def _toggle_console_panel(self, hidden: bool) -> None:
+        self.console_holder.setVisible(not hidden)
+        self.btn_toggle_console.setText("Mostrar consola" if hidden else "Ocultar consola")
 
     def _build_left_column(self) -> QWidget:
         column = QWidget(self)
         layout = QVBoxLayout(column)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-
-        layout.addWidget(self._build_team_banner())
 
         self.connection = ConnectionPanel(self)
         layout.addWidget(self.connection)
@@ -147,43 +221,6 @@ class MainWindow(QMainWindow):
         scroll.setWidget(column)
         return scroll
 
-    def _build_team_banner(self) -> QFrame:
-        """Cabecera con la insignia del equipo Pepe el Pollo."""
-        banner = QFrame(self)
-        banner.setObjectName("Panel")
-        row = QHBoxLayout(banner)
-        row.setContentsMargins(10, 8, 12, 8)
-        row.setSpacing(12)
-
-        logo_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "docs",
-            "insignia-pepe-el-pollo.png",
-        )
-        logo_lbl = QLabel(banner)
-        logo_lbl.setFixedSize(52, 52)
-        logo_lbl.setAlignment(Qt.AlignCenter)
-        if os.path.exists(logo_path):
-            pix = QPixmap(logo_path).scaled(
-                52, 52, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            logo_lbl.setPixmap(pix)
-        row.addWidget(logo_lbl)
-
-        text_col = QVBoxLayout()
-        text_col.setContentsMargins(0, 0, 0, 0)
-        text_col.setSpacing(2)
-        title = QLabel("PEPE EL POLLO", banner)
-        title.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; letter-spacing: 1px; color: {Colors.TEXT};"
-        )
-        subtitle = QLabel("CanSat · Estación Terrestre · FITEC", banner)
-        subtitle.setStyleSheet(f"font-size: 11px; color: {Colors.ACCENT};")
-        text_col.addWidget(title)
-        text_col.addWidget(subtitle)
-        row.addLayout(text_col, 1)
-        return banner
-
     def _build_right_area(self) -> QWidget:
         splitter = QSplitter(Qt.Vertical, self)
         splitter.setChildrenCollapsible(False)
@@ -222,6 +259,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         self.console = LogConsole(self)
         layout.addWidget(self.console)
+        self.console_holder = holder
         return holder
 
     def _build_status_bar(self) -> None:

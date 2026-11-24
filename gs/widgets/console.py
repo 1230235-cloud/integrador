@@ -145,18 +145,6 @@ class ControlPanel(Panel):
         self.path_label.setToolTip("Sin grabación activa")
         self.body.addWidget(self.path_label)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        self.command_edit = QLineEdit(self)
-        self.command_edit.setPlaceholderText("Comando libre (Enter para enviar)")
-        self.command_edit.returnPressed.connect(self._send_typed)
-        row.addWidget(self.command_edit, 1)
-        self.send_btn = _button("ENVIAR", "Primary", "Envía el texto del campo de comando")
-        self.send_btn.setFixedWidth(92)
-        self.send_btn.clicked.connect(self._send_typed)
-        row.addWidget(self.send_btn)
-        self.body.addLayout(row)
-
         row3 = QHBoxLayout()
         row3.setSpacing(8)
         self.echo_check = QCheckBox("Trama cruda", self)
@@ -182,10 +170,8 @@ class ControlPanel(Panel):
         self._toggle_recording()
 
     def set_link_active(self, active: bool) -> None:
-        """Habilita el envío de comandos con el enlace abierto; grabar siempre disponible."""
+        """Actualiza estado de enlace; acciones y grabación permanecen accesibles."""
         self._link_active = bool(active)
-        self.send_btn.setEnabled(active)
-        self.command_edit.setEnabled(active)
         self.action_combo.setEnabled(True)
         self.exec_btn.setEnabled(True)
         self.record_btn.setEnabled(True)
@@ -212,13 +198,7 @@ class ControlPanel(Panel):
             self._send(str(data))
 
     def _send(self, command: str) -> None:
-        self.command_edit.setText(command)
         self.command_sent.emit(command)
-
-    def _send_typed(self) -> None:
-        command = self.command_edit.text().strip()
-        if command:
-            self.command_sent.emit(command)
 
     def _toggle_recording(self) -> None:
         if self._recording:
