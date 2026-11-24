@@ -37,14 +37,26 @@ SIM_TAG = "__SIM__"
 
 # --------------------------------------------------------------------- puertos
 def list_serial_ports() -> list:
-    """Devuelve ``[(puerto, descripcion, hwid)]`` o lista vacía."""
+    """Devuelve ``[(puerto, descripcion, hwid)]`` filtrando puertos virtuales vacíos."""
     if not SERIAL_AVAILABLE:
         return []
     try:
         ports = serial.tools.list_ports.comports()
     except Exception:
         return []
-    return [(p.device, p.description or p.device, p.hwid or "") for p in ports]
+
+    filtered = []
+    for p in ports:
+        dev = p.device or ""
+        hwid = (p.hwid or "").strip()
+        # En Linux, descartar /dev/ttyS* internos sin hardware real asociado
+        if dev.startswith("/dev/ttyS") and (not hwid or hwid.lower() == "n/a"):
+            continue
+        filtered.append((dev, p.description or dev, hwid))
+
+    # Priorizar puertos USB (CP2102 / Heltec / ESP32) al principio de la lista
+    filtered.sort(key=lambda item: (0 if ("USB" in item[0].upper() or "ACM" in item[0].upper()) else 1, item[0]))
+    return filtered
 
 
 def _encode(telemetry) -> bytes:
