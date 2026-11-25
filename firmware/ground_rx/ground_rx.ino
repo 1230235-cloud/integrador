@@ -153,8 +153,11 @@ static void processSerialCommands() {
       if (serialLine.length() > 0 && loraReady) {
         if (serialLine.startsWith("C,")) {
           radio.clearDio1Action();
-          const int16_t st = radio.transmit(serialLine);
+          int16_t st = radio.transmit(serialLine);
+          delay(45);
+          // Reenvío breve para evitar colisión si el CanSat justo estaba transmitiendo
           if (st == RADIOLIB_ERR_NONE) {
+            radio.transmit(serialLine);
             Serial.printf("OK,CMD,%s\r\n", serialLine.c_str());
           } else {
             Serial.printf("E,error TX comando LoRa (%d)\r\n", st);

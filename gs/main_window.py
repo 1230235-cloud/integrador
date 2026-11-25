@@ -192,8 +192,6 @@ class MainWindow(QMainWindow):
         self.ind_vel = IndicatorCard("VELOCIDAD VERT.", "m/s", Colors.OK, decimals=2)
         self.ind_temp = IndicatorCard("TEMPERATURA", "°C", Colors.TEMP, decimals=1)
         self.ind_press = IndicatorCard("PRESIÓN", "hPa", Colors.PRESS, decimals=2)
-        self.ind_volt = IndicatorCard("BATERÍA", "V", Colors.VOLT, decimals=2,
-                                      warning_low=6.8)
         self.ind_acc = IndicatorCard("ACELERACIÓN", "m/s²", Colors.WARN, decimals=2)
         self.ind_st = MissionClockCard(self)
 
@@ -201,8 +199,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.ind_vel, 0, 1)
         grid.addWidget(self.ind_temp, 1, 0)
         grid.addWidget(self.ind_press, 1, 1)
-        grid.addWidget(self.ind_volt, 2, 0)
-        grid.addWidget(self.ind_acc, 2, 1)
+        grid.addWidget(self.ind_acc, 2, 0, 1, 2)
         grid.addWidget(self.ind_st, 3, 0, 1, 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
@@ -393,9 +390,6 @@ class MainWindow(QMainWindow):
         self.ind_vel.set_value(telemetry.velocity)
         self.ind_temp.set_value(telemetry.temperature)
         self.ind_press.set_value(telemetry.pressure)
-        bat_pct = max(0, min(100, int(round((telemetry.voltage - 6.5) / (9.0 - 6.5) * 100.0))))
-        bat_status = f"{bat_pct} % · {'ALERTA' if telemetry.voltage < 6.8 else 'nominal'}"
-        self.ind_volt.set_value(telemetry.voltage, status_text=bat_status)
         self.ind_acc.set_value(telemetry.accel)
 
         self._max_altitude = max(self._max_altitude, telemetry.altitude)

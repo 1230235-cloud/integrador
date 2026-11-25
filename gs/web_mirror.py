@@ -90,8 +90,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="card"><div class="lbl">VELOCIDAD VERT.</div><div id="v-vel" class="val">--</div><div class="sub">m/s</div></div>
   <div class="card"><div class="lbl">ACELERACIÓN</div><div id="v-acc" class="val">--</div><div class="sub">m/s²</div></div>
   <div class="card"><div class="lbl">TEMPERATURA</div><div id="v-temp" class="val">--</div><div class="sub">°C</div></div>
-  <div class="card"><div class="lbl">PRESIÓN</div><div id="v-pres" class="val">--</div><div class="sub">hPa</div></div>
-  <div class="card"><div class="lbl">BATERÍA</div><div id="v-vol" class="val">--</div><div id="v-pkt" class="sub">pkt 0</div></div>
+  <div class="card"><div class="lbl">PRESIÓN</div><div id="v-pres" class="val">--</div><div id="v-pkt" class="sub">hPa · pkt 0</div></div>
 </section>
 
 <section class="panels">
@@ -241,9 +240,7 @@ function connect(){
     el("v-acc").textContent  = (d.accel_ms2 >= 0 ? "+" : "") + d.accel_ms2.toFixed(2);
     el("v-temp").textContent = d.temperature_c.toFixed(1);
     el("v-pres").textContent = d.pressure_hpa.toFixed(1);
-    const batPct = Math.max(0, Math.min(100, Math.round((d.voltage_v - 6.5) / 2.5 * 100)));
-    el("v-vol").textContent  = `${d.voltage_v.toFixed(2)} V (${batPct}%)`;
-    el("v-pkt").textContent  = "pkt " + d.packet;
+    el("v-pkt").textContent  = "hPa · pkt " + d.packet;
     el("v-state").textContent = STATES[d.state] || ("S" + d.state);
     el("v-att").textContent  = `P ${d.pitch_deg.toFixed(1)} · R ${d.roll_deg.toFixed(1)} · Y ${d.yaw_deg.toFixed(1)}`;
     el("badge-rf").textContent = (d.rssi_dbm !== null)

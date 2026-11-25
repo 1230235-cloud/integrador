@@ -21,6 +21,7 @@
 
 #include <Adafruit_BMP280.h>
 #include <Adafruit_BNO08x.h>
+#include <ESP32Servo.h>
 #include <RadioLib.h>
 #include <SSD1306Wire.h>
 
@@ -161,6 +162,7 @@ Adafruit_BMP280 bmp(&Wire1);
 Adafruit_BNO08x bno08x(-1);
 sh2_SensorValue_t imuEvent;
 SSD1306Wire display(OLED_ADDR, PIN_OLED_SDA, PIN_OLED_SCL, GEOMETRY_128_64, I2C_ONE);
+Servo releaseServo;
 
 // ============================================================================
 // ESTADO DE LA MISIÓN
@@ -227,29 +229,18 @@ static float sanitizeFloat(float value, float fallback, float minVal, float maxV
   return value;
 }
 
-// Nota ESP32-S3: el hardware LEDC del S3 soporta máximo 14 bits (16 bits falla).
-// Usamos 12 bits (0..4095) a 50 Hz, 100 % compatible con ESP32 y ESP32-S3.
-constexpr uint8_t  SERVO_PWM_BITS = 12;
-constexpr float    SERVO_PWM_MAX  = 4095.0f;
-
 static void servoInit() {
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcAttach(PIN_SERVO, 50, SERVO_PWM_BITS);
-#else
-  ledcSetup(0, 50, SERVO_PWM_BITS);
-  ledcAttachPin(PIN_SERVO, 0);
-#endif
+  ESP32PWM::allocateTimer(0);
+  releaseServo.setPeriodHertz(50);
+  releaseServo.attach(PIN_SERVO, 500, 2400);
 }
 
 static void servoWriteAngle(float degrees) {
-  degrees = constrain(degrees, 0.0f, 180.0f);
-  const float pulseMs = 0.5f + (degrees / 180.0f) * 2.0f;
-  const uint32_t duty = static_cast<uint32_t>((pulseMs / 20.0f) * SERVO_PWM_MAX);
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcWrite(PIN_SERVO, duty);
-#else
-  ledcWrite(0, duty);
-#endif
+  const int ang = static_cast<int>(constrain(degrees, 0.0f, 180.0f));
+  if (!releaseServo.attached()) {
+    releaseServo.attach(PIN_SERVO, 500, 2400);
+  }
+  releaseServo.write(ang);
 }
 
 static float readBatteryVoltage() {
@@ -537,9 +528,8 @@ static void transmitTelemetry(uint32_t nowMs) {
   radio.clearDio1Action();
   radio.transmit(reinterpret_cast<uint8_t *>(&f), sizeof(f));
 
-  // En tierra (PRE/LANDED) dejar el radio escuchando de forma continua entre
-  // envíos (por interrupción DIO1) para no perder ningún comando de banco.
-  if (missionState == STATE_PRE || missionState == STATE_LANDED) {
+  // Escuchar comandos en todo momento excepto en caída libre (STATE_DESCENT)
+  if (missionState != STATE_DESCENT) {
     loraRxFlag = false;
     radio.setDio1Action(onTxBoardLoraRx);
     radio.startReceive();
@@ -552,7 +542,7 @@ static void pollGroundCommands() {
 
   String rxCmd;
   const int16_t st = radio.readData(rxCmd);
-  if (missionState == STATE_PRE || missionState == STATE_LANDED) {
+  if (missionState != STATE_DESCENT) {
     radio.startReceive();
   }
   if (st == RADIOLIB_ERR_NONE && rxCmd.length() > 0) {
