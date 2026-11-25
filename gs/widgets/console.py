@@ -109,6 +109,16 @@ class ControlPanel(Panel):
         super().__init__("CONTROL DE MISIÓN", parent)
         self._recording = False
 
+        # Botón principal de armado / inicio de misión (habilita el servo para caída libre)
+        self.start_mission_btn = _button(
+            "▶ INICIAR MISIÓN (ARMAR SERVO)",
+            "Warn",
+            "Calibra sensores y arma el despliegue automático del servo para el vuelo",
+        )
+        self.start_mission_btn.setFixedHeight(34)
+        self.start_mission_btn.clicked.connect(lambda: self._send(protocol.CMD_START_MISSION))
+        self.body.addWidget(self.start_mission_btn)
+
         # Fila compacta: desplegable QComboBox de acciones + botón ejecutar + botón grabar
         top_row = QHBoxLayout()
         top_row.setSpacing(6)

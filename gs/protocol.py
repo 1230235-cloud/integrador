@@ -47,6 +47,7 @@ TELEMETRY_PREFIX = "T"
 EVENT_PREFIX = "E"
 
 #: Comandos hacia el CanSat (tramas de cable del firmware).
+CMD_START_MISSION = "C,SYS,START"
 CMD_CALIBRATE = "C,CAL,1"
 CMD_TEST_SERVO = "C,SERVO,TEST"
 CMD_INJECTION = "C,INJ,1"          # reservado: sin efecto en esta misión

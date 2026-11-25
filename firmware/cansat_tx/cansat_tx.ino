@@ -189,6 +189,7 @@ void onTxBoardLoraRx() {
 }
 
 MissionState missionState = STATE_PRE;
+bool missionArmed    = false;  // Solo se activa al pulsar "INICIAR MISIÓN"
 bool chuteDeployed   = false;
 bool secondaryFree   = false;
 bool deployAborted   = false;
@@ -208,6 +209,8 @@ float altitudeM        = 0.0f;
 float maxAltitudeM     = 0.0f;
 float velocityMs       = 0.0f;
 float accelVertMs2     = 0.0f;
+float accelFiltered    = 0.0f;
+float accelBiasMs2     = 0.0f;
 float voltageV         = 8.4f;
 
 float pitchDeg = 0.0f;
@@ -405,8 +408,12 @@ static void pollSensors(uint32_t nowMs) {
         const float ay = imuEvent.un.linearAcceleration.y;
         const float az = imuEvent.un.linearAcceleration.z;
         if (isfinite(ax) && isfinite(ay) && isfinite(az)) {
-          const float wz = rotateZToWorld(qW, qX, qY, qZ, ax, ay, az);
-          accelVertMs2 = sanitizeFloat(wz, accelVertMs2, -160.0f, 160.0f);
+          const float wz = sanitizeFloat(
+              rotateZToWorld(qW, qX, qY, qZ, ax, ay, az), 0.0f, -160.0f, 160.0f);
+          // Filtro paso-bajo + resta de bias en reposo + banda muerta contra ruido MEMS
+          accelFiltered = 0.80f * accelFiltered + 0.20f * wz;
+          const float clean = accelFiltered - accelBiasMs2;
+          accelVertMs2 = (fabsf(clean) < 0.18f) ? 0.0f : clean;
         }
       }
     }
@@ -420,7 +427,8 @@ static void updateMissionState(uint32_t nowMs) {
 
   switch (missionState) {
     case STATE_PRE:
-      if (altitudeM > ALT_ASCENT_TRIGGER_M && velocityMs > VEL_ASCENT_MIN_MS) {
+      // No arma ni pasa a vuelo hasta pulsar explícitamente "INICIAR MISIÓN"
+      if (missionArmed && altitudeM > ALT_ASCENT_TRIGGER_M && velocityMs > VEL_ASCENT_MIN_MS) {
         if (inStateMs >= ASCENT_HOLD_MS) {
           missionState = STATE_ASCENT;
           stateEnteredMs = nowMs;
@@ -444,7 +452,7 @@ static void updateMissionState(uint32_t nowMs) {
     case STATE_DESCENT: {
       const float leadM = fabsf(velocityMs) * SERVO_DELAY_S;
       const float triggerM = ALT_DEPLOY_TARGET_M + leadM + DEPLOY_MARGIN_M;
-      const bool validFlight = maxAltitudeM > ALT_MIN_ARM_M;
+      const bool validFlight = missionArmed && (maxAltitudeM > ALT_MIN_ARM_M);
       const bool falling = velocityMs < VEL_FALL_TRIGGER_MS;
 
       if (!deployAborted && !chuteDeployed && validFlight && falling && altitudeM <= triggerM) {
@@ -482,9 +490,32 @@ static void updateMissionState(uint32_t nowMs) {
 // COMANDOS DESDE ESTACIÓN TERRENA Y TELEMETRÍA LORA
 // ============================================================================
 static void handleGroundCommand(const String &cmd) {
-  if (cmd.indexOf("CAL") >= 0) {
+  if (cmd.indexOf("START") >= 0) {
     calibrateBarometer();
     tareImuFromCurrent();
+    accelBiasMs2 = accelFiltered;
+    accelVertMs2 = 0.0f;
+    missionState = STATE_PRE;
+    missionArmed = true;
+    chuteDeployed = false;
+    secondaryFree = false;
+    deployAborted = false;
+    maxAltitudeM = 0.0f;
+    missionStartMs = millis();
+    stateEnteredMs = missionStartMs;
+    servoWriteAngle(SERVO_ANGLE_CLOSED);
+    if (loraReady) {
+      radio.clearDio1Action();
+      radio.transmit("E,mision INICIADA y ARMADA (servo habilitado)");
+      loraRxFlag = false;
+      radio.setDio1Action(onTxBoardLoraRx);
+      radio.startReceive();
+    }
+  } else if (cmd.indexOf("CAL") >= 0) {
+    calibrateBarometer();
+    tareImuFromCurrent();
+    accelBiasMs2 = accelFiltered;
+    accelVertMs2 = 0.0f;
   } else if (cmd.indexOf("SERVO") >= 0 || cmd.indexOf("TEST") >= 0) {
     testServo();
   } else if (cmd.indexOf("DEP") >= 0) {
@@ -493,6 +524,7 @@ static void handleGroundCommand(const String &cmd) {
     deployAborted = true;
   } else if (cmd.indexOf("RESET") >= 0) {
     missionState = STATE_PRE;
+    missionArmed = false;
     chuteDeployed = false;
     secondaryFree = false;
     deployAborted = false;
@@ -559,7 +591,7 @@ static void refreshOled() {
 
   snprintf(line, sizeof(line), "TX[%s] S:%u %s",
            FLIGHT_MODE_TAG, static_cast<unsigned>(missionState),
-           chuteDeployed ? "OPEN" : "ARM");
+           chuteDeployed ? "OPEN" : (missionArmed ? "ARM" : "SAFE"));
   display.drawString(0, 0, line);
 
   snprintf(line, sizeof(line), "BMP:%s IMU:%s RF:%s",
