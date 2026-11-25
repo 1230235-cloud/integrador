@@ -50,7 +50,7 @@ class HorizonCanvas(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumSize(240, 220)
+        self.setMinimumSize(190, 145)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._pitch = 0.0
         self._roll = 0.0
@@ -235,7 +235,7 @@ class Satellite3DView(QWidget):
         layout.setSpacing(6)
 
         self.view = gl.GLViewWidget()
-        self.view.setMinimumSize(260, 240)
+        self.view.setMinimumSize(190, 145)
         self.view.setBackgroundColor(QColor(Colors.BG_WIDGET))
         self.view.setCameraPosition(pos=QVector3D(0, 0, -0.15), distance=5.6,
                                     elevation=18, azimuth=35)

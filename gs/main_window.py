@@ -225,32 +225,33 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Vertical, self)
         splitter.setChildrenCollapsible(False)
 
+        # Franja superior compacta: modelo 3D en la esquina superior izquierda + consola al lado
+        top_strip = QSplitter(Qt.Horizontal, splitter)
+        top_strip.setChildrenCollapsible(False)
+        top_strip.addWidget(self._build_attitude_block())
+        top_strip.addWidget(self._build_console_block())
+        top_strip.setSizes([300, 820])
+        top_strip.setMaximumHeight(260)
+
+        # Gráficas abajo ocupando la mayor parte de la pantalla
         self.plots = TelemetryPlots(self)
 
-        bottom = QSplitter(Qt.Horizontal, splitter)
-        bottom.setChildrenCollapsible(False)
-        bottom.addWidget(self._build_attitude_block())
-        bottom.addWidget(self._build_console_block())
-        bottom.setSizes([620, 700])
-
+        splitter.addWidget(top_strip)
         splitter.addWidget(self.plots)
-        splitter.addWidget(bottom)
-        splitter.setSizes([520, 420])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([220, 680])
         return splitter
 
     def _build_attitude_block(self) -> QWidget:
         holder = QWidget(self)
+        holder.setMinimumWidth(240)
         layout = QVBoxLayout(holder)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         self.attitude = AttitudeIndicator(self)
         layout.addWidget(self.attitude)
-
-        reset = QLabel("Arrastra para orbitar · rueda para zoom · botón derecho para rotar",
-                       holder)
-        reset.setObjectName("Hint")
-        reset.setAlignment(Qt.AlignCenter)
-        layout.addWidget(reset)
         return holder
 
     def _build_console_block(self) -> QWidget:
