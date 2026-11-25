@@ -177,6 +177,14 @@ bool bmpReady  = false;
 bool imuReady  = false;
 bool oledReady = false;
 bool loraReady = false;
+volatile bool loraRxFlag = false;
+
+#if defined(ESP8266) || defined(ESP32)
+ICACHE_RAM_ATTR
+#endif
+void onTxBoardLoraRx() {
+  loraRxFlag = true;
+}
 
 MissionState missionState = STATE_PRE;
 bool chuteDeployed   = false;
@@ -219,11 +227,16 @@ static float sanitizeFloat(float value, float fallback, float minVal, float maxV
   return value;
 }
 
+// Nota ESP32-S3: el hardware LEDC del S3 soporta máximo 14 bits (16 bits falla).
+// Usamos 12 bits (0..4095) a 50 Hz, 100 % compatible con ESP32 y ESP32-S3.
+constexpr uint8_t  SERVO_PWM_BITS = 12;
+constexpr float    SERVO_PWM_MAX  = 4095.0f;
+
 static void servoInit() {
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcAttach(PIN_SERVO, 50, 16);
+  ledcAttach(PIN_SERVO, 50, SERVO_PWM_BITS);
 #else
-  ledcSetup(0, 50, 16);
+  ledcSetup(0, 50, SERVO_PWM_BITS);
   ledcAttachPin(PIN_SERVO, 0);
 #endif
 }
@@ -231,7 +244,7 @@ static void servoInit() {
 static void servoWriteAngle(float degrees) {
   degrees = constrain(degrees, 0.0f, 180.0f);
   const float pulseMs = 0.5f + (degrees / 180.0f) * 2.0f;
-  const uint32_t duty = static_cast<uint32_t>((pulseMs / 20.0f) * 65535.0f);
+  const uint32_t duty = static_cast<uint32_t>((pulseMs / 20.0f) * SERVO_PWM_MAX);
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
   ledcWrite(PIN_SERVO, duty);
 #else
@@ -334,10 +347,19 @@ static void deployAutogyro() {
 }
 
 static void testServo() {
-  // Prueba en banco sin armar ni marcar despliegue de misión: abre y vuelve a cerrar
+  // Prueba en banco sin marcar despliegue: abre a 85°, espera 700 ms y cierra a 0°
+  if (loraReady) {
+    radio.clearDio1Action();
+    radio.transmit("E,servo test GPIO5 ejecutado");
+  }
   servoWriteAngle(SERVO_ANGLE_OPEN);
   delay(700);
   servoWriteAngle(SERVO_ANGLE_CLOSED);
+  if (loraReady && (missionState == STATE_PRE || missionState == STATE_LANDED)) {
+    loraRxFlag = false;
+    radio.setDio1Action(onTxBoardLoraRx);
+    radio.startReceive();
+  }
 }
 
 // ============================================================================
@@ -512,15 +534,29 @@ static void transmitTelemetry(uint32_t nowMs) {
   f.roll_cdeg  = static_cast<int16_t>(constrain(lroundf(rollDeg * 100.0f), -32000L, 32000L));
   f.yaw_cdeg   = static_cast<uint16_t>(constrain(lroundf(yawDeg * 100.0f), 0L, 36000L));
 
+  radio.clearDio1Action();
   radio.transmit(reinterpret_cast<uint8_t *>(&f), sizeof(f));
 
-  // Escuchar comandos solo en tierra (PRE/LANDED) para no frenar la caída libre.
-  // A BW 500 kHz / SF7 la ventana dura ~26 ms, haciendo el test de servo muy ágil.
+  // En tierra (PRE/LANDED) dejar el radio escuchando de forma continua entre
+  // envíos (por interrupción DIO1) para no perder ningún comando de banco.
   if (missionState == STATE_PRE || missionState == STATE_LANDED) {
-    String rxCmd;
-    if (radio.receive(rxCmd) == RADIOLIB_ERR_NONE && rxCmd.length() > 0) {
-      handleGroundCommand(rxCmd);
-    }
+    loraRxFlag = false;
+    radio.setDio1Action(onTxBoardLoraRx);
+    radio.startReceive();
+  }
+}
+
+static void pollGroundCommands() {
+  if (!loraReady || !loraRxFlag) return;
+  loraRxFlag = false;
+
+  String rxCmd;
+  const int16_t st = radio.readData(rxCmd);
+  if (missionState == STATE_PRE || missionState == STATE_LANDED) {
+    radio.startReceive();
+  }
+  if (st == RADIOLIB_ERR_NONE && rxCmd.length() > 0) {
+    handleGroundCommand(rxCmd);
   }
 }
 
@@ -623,6 +659,8 @@ void setup() {
 
 void loop() {
   const uint32_t nowMs = millis();
+
+  pollGroundCommands();
 
   if (nowMs - lastSampleMs >= SAMPLE_PERIOD_MS) {
     pollSensors(nowMs);
