@@ -225,12 +225,12 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Vertical, self)
         splitter.setChildrenCollapsible(False)
 
-        # Franja superior compacta: modelo 3D en la esquina superior izquierda + consola al lado
+        # Franja superior compacta: consola a la izquierda + modelo 3D en la esquina superior derecha
         top_strip = QSplitter(Qt.Horizontal, splitter)
         top_strip.setChildrenCollapsible(False)
-        top_strip.addWidget(self._build_attitude_block())
         top_strip.addWidget(self._build_console_block())
-        top_strip.setSizes([300, 820])
+        top_strip.addWidget(self._build_attitude_block())
+        top_strip.setSizes([820, 300])
         top_strip.setMaximumHeight(260)
 
         # Gráficas abajo ocupando la mayor parte de la pantalla
