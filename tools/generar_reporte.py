@@ -28,7 +28,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
-DEPLOY_TARGET_M = 28.0
+DEPLOY_TARGET_M = 25.5
 DEFAULT_LOGO = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "docs",

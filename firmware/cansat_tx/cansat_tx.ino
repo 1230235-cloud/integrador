@@ -116,17 +116,19 @@ static_assert(sizeof(TelemetryFrame) == 30, "TelemetryFrame debe medir 30 bytes"
 #define MODO_PRUEBA_30M 1
 
 #if MODO_PRUEBA_30M
-  // Perfil de prueba desde ~30 m: armado temprano y despliegue inmediato al soltar
-  constexpr const char *FLIGHT_MODE_TAG = "30M";
+  // Perfil de prueba desde ~28 m: disparo dual (caída libre IMU + barómetro 25.5 m)
+  constexpr const char *FLIGHT_MODE_TAG = "28M";
   constexpr float ALT_ASCENT_TRIGGER_M  = 6.0f;
   constexpr float VEL_ASCENT_MIN_MS     = 1.0f;
-  constexpr uint32_t ASCENT_HOLD_MS     = 600;
-  constexpr uint32_t APOGEE_HOLD_MS     = 250;
-  constexpr float ALT_MIN_ARM_M         = 12.0f;  // Arma al superar 12 m
-  constexpr float ALT_DEPLOY_TARGET_M   = 28.0f;  // Despliega a 28 m en caída desde ~30 m
-  constexpr float ALT_FORCE_DEPLOY_M    = 24.0f;  // Respaldo forzado si aún no abrió
+  constexpr uint32_t ASCENT_HOLD_MS     = 500;
+  constexpr uint32_t APOGEE_HOLD_MS     = 200;
+  constexpr float ALT_MIN_ARM_M         = 15.0f;  // Arma al superar 15 m
+  constexpr float ALT_DEPLOY_TARGET_M   = 25.5f;  // Disparo barométrico (25-26 m)
+  constexpr float ALT_FORCE_DEPLOY_M    = 22.0f;  // Respaldo forzado
   constexpr float VEL_FALL_TRIGGER_MS   = -1.2f;
-  constexpr float DEPLOY_MARGIN_M       = 1.0f;
+  constexpr float DEPLOY_MARGIN_M       = 0.8f;
+  constexpr float FREEFALL_ACCEL_MS2    = -5.5f;  // Disparo rápido por caída libre IMU
+  constexpr uint32_t FREEFALL_HOLD_MS   = 150;    // 150 ms sostenidos (~11 cm de caída)
 #else
   // Perfil oficial PEUUM: suelta a 450 m, despliegue de autogiro a 200 m
   constexpr const char *FLIGHT_MODE_TAG = "450M";
@@ -139,6 +141,8 @@ static_assert(sizeof(TelemetryFrame) == 30, "TelemetryFrame debe medir 30 bytes"
   constexpr float ALT_FORCE_DEPLOY_M    = 150.0f;
   constexpr float VEL_FALL_TRIGGER_MS   = -3.0f;
   constexpr float DEPLOY_MARGIN_M       = 2.0f;
+  constexpr float FREEFALL_ACCEL_MS2    = -99.0f; // Desactivado en 450 m (solo 200 m)
+  constexpr uint32_t FREEFALL_HOLD_MS   = 999999;
 #endif
 
 constexpr float SERVO_DELAY_S       = 0.35f;
@@ -196,6 +200,7 @@ bool deployAborted   = false;
 
 uint32_t missionStartMs   = 0;
 uint32_t stateEnteredMs   = 0;
+uint32_t freefallStartMs  = 0;
 uint32_t landedAtMs       = 0;
 uint32_t lastSampleMs     = 0;
 uint32_t lastTxMs         = 0;
@@ -439,6 +444,21 @@ static void updateMissionState(uint32_t nowMs) {
       break;
 
     case STATE_ASCENT:
+      // Disparador rápido por caída libre IMU (apenas el dron lo suelta a ~28 m)
+      if (missionArmed && imuReady && !deployAborted && !chuteDeployed &&
+          maxAltitudeM > ALT_MIN_ARM_M && accelVertMs2 < FREEFALL_ACCEL_MS2) {
+        if (freefallStartMs == 0) {
+          freefallStartMs = nowMs;
+        } else if (nowMs - freefallStartMs >= FREEFALL_HOLD_MS) {
+          missionState = STATE_DESCENT;
+          stateEnteredMs = nowMs;
+          deployAutogyro();
+          break;
+        }
+      } else {
+        freefallStartMs = 0;
+      }
+
       if (velocityMs < -0.5f) {
         if (inStateMs >= APOGEE_HOLD_MS) {
           missionState = STATE_DESCENT;
@@ -454,6 +474,18 @@ static void updateMissionState(uint32_t nowMs) {
       const float triggerM = ALT_DEPLOY_TARGET_M + leadM + DEPLOY_MARGIN_M;
       const bool validFlight = missionArmed && (maxAltitudeM > ALT_MIN_ARM_M);
       const bool falling = velocityMs < VEL_FALL_TRIGGER_MS;
+
+      // También permite disparo rápido por caída libre IMU si ya entró en DESCENSO
+      if (validFlight && imuReady && !deployAborted && !chuteDeployed &&
+          accelVertMs2 < FREEFALL_ACCEL_MS2) {
+        if (freefallStartMs == 0) {
+          freefallStartMs = nowMs;
+        } else if (nowMs - freefallStartMs >= FREEFALL_HOLD_MS) {
+          deployAutogyro();
+        }
+      } else {
+        freefallStartMs = 0;
+      }
 
       if (!deployAborted && !chuteDeployed && validFlight && falling && altitudeM <= triggerM) {
         deployAutogyro();

@@ -30,8 +30,8 @@ from .connection import Panel
 MAX_SAMPLES = 1500
 #: Intervalo mínimo (s) entre muestras dibujadas (25 Hz para caída de 2.5 s).
 SAMPLE_DT = 0.04
-#: Altitud nominal de apertura del autogiro (m, perfil de prueba 30 m).
-ALT_DESPLEGUE = 28.0
+#: Altitud nominal de apertura del autogiro (m, suelta 28 m / despliegue 25.5 m).
+ALT_DESPLEGUE = 25.5
 
 
 class TelemetryPlots(Panel):

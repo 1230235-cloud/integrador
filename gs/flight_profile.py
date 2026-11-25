@@ -41,8 +41,8 @@ ESCALA_BAROMETRICA = 8434.5
 class MissionConfig:
     """Parámetros del perfil (prueba de caída desde 30 m con despliegue a 24 m)."""
 
-    alt_suelta: float = 30.0
-    alt_despliegue: float = 28.0
+    alt_suelta: float = 28.0
+    alt_despliegue: float = 25.5
     v_ascenso: float = 3.0
     v_autogiro: float = 4.7
     v_terminal_libre: float = 41.0
