@@ -147,7 +147,7 @@ static_assert(sizeof(TelemetryFrame) == 30, "TelemetryFrame debe medir 30 bytes"
 
 constexpr float SERVO_DELAY_S       = 0.35f;
 constexpr float SERVO_ANGLE_CLOSED  = 0.0f;
-constexpr float SERVO_ANGLE_OPEN    = 85.0f;
+constexpr float SERVO_ANGLE_OPEN    = 90.0f;
 
 constexpr uint32_t SAMPLE_PERIOD_MS    = 15;   // ~66 Hz sensores
 constexpr uint32_t TX_PERIOD_PRE_MS    = 200;  // 5 Hz en tierra (con ventana de comandos)
@@ -201,6 +201,8 @@ bool deployAborted   = false;
 uint32_t missionStartMs   = 0;
 uint32_t stateEnteredMs   = 0;
 uint32_t freefallStartMs  = 0;
+uint32_t deployAtMs       = 0;
+uint8_t  deployStep       = 0;  // 0=idle, 1=90°, 2=0° (pulso), 3=90° final
 uint32_t landedAtMs       = 0;
 uint32_t lastSampleMs     = 0;
 uint32_t lastTxMs         = 0;
@@ -340,21 +342,39 @@ static float rotateZToWorld(float qr, float qi, float qj, float qk,
 
 static void deployAutogyro() {
   if (chuteDeployed) return;
-  servoWriteAngle(SERVO_ANGLE_OPEN);
+  servoWriteAngle(SERVO_ANGLE_OPEN);  // 1er movimiento: 0° -> 90°
+  deployAtMs = millis();
+  deployStep = 1;
   secondaryFree = true;
   chuteDeployed = true;
 }
 
+static void updateDeploySequence(uint32_t nowMs) {
+  // Segundo movimiento no bloqueante (90° -> 0° -> 90°) para asegurar el desacople
+  // sin frenar la transmisión LoRa de 25 Hz durante la caída.
+  if (deployStep == 1 && (nowMs - deployAtMs >= 220)) {
+    servoWriteAngle(SERVO_ANGLE_CLOSED);  // retroceso breve a 0°
+    deployStep = 2;
+  } else if (deployStep == 2 && (nowMs - deployAtMs >= 400)) {
+    servoWriteAngle(SERVO_ANGLE_OPEN);    // 2do golpe firme a 90°
+    deployStep = 3;
+  }
+}
+
 static void testServo() {
-  // Prueba en banco sin marcar despliegue: abre a 85°, espera 700 ms y cierra a 0°
+  // Prueba en banco con doble movimiento: 0° -> 90° -> 0° -> 90° -> 0°
   if (loraReady) {
     radio.clearDio1Action();
-    radio.transmit("E,servo test GPIO5 ejecutado");
+    radio.transmit("E,servo test doble 0-90-0-90 ejecutado");
   }
   servoWriteAngle(SERVO_ANGLE_OPEN);
-  delay(700);
+  delay(300);
   servoWriteAngle(SERVO_ANGLE_CLOSED);
-  if (loraReady && (missionState == STATE_PRE || missionState == STATE_LANDED)) {
+  delay(220);
+  servoWriteAngle(SERVO_ANGLE_OPEN);
+  delay(400);
+  servoWriteAngle(SERVO_ANGLE_CLOSED);
+  if (loraReady && missionState != STATE_DESCENT) {
     loraRxFlag = false;
     radio.setDio1Action(onTxBoardLoraRx);
     radio.startReceive();
@@ -532,6 +552,7 @@ static void handleGroundCommand(const String &cmd) {
     chuteDeployed = false;
     secondaryFree = false;
     deployAborted = false;
+    deployStep = 0;
     maxAltitudeM = 0.0f;
     missionStartMs = millis();
     stateEnteredMs = missionStartMs;
@@ -560,6 +581,7 @@ static void handleGroundCommand(const String &cmd) {
     chuteDeployed = false;
     secondaryFree = false;
     deployAborted = false;
+    deployStep = 0;
     maxAltitudeM = 0.0f;
     missionStartMs = millis();
     stateEnteredMs = missionStartMs;
@@ -715,6 +737,7 @@ void loop() {
   const uint32_t nowMs = millis();
 
   pollGroundCommands();
+  updateDeploySequence(nowMs);
 
   if (nowMs - lastSampleMs >= SAMPLE_PERIOD_MS) {
     pollSensors(nowMs);
