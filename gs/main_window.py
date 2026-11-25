@@ -393,7 +393,9 @@ class MainWindow(QMainWindow):
         self.ind_vel.set_value(telemetry.velocity)
         self.ind_temp.set_value(telemetry.temperature)
         self.ind_press.set_value(telemetry.pressure)
-        self.ind_volt.set_value(telemetry.voltage)
+        bat_pct = max(0, min(100, int(round((telemetry.voltage - 6.5) / (9.0 - 6.5) * 100.0))))
+        bat_status = f"{bat_pct} % · {'ALERTA' if telemetry.voltage < 6.8 else 'nominal'}"
+        self.ind_volt.set_value(telemetry.voltage, status_text=bat_status)
         self.ind_acc.set_value(telemetry.accel)
 
         self._max_altitude = max(self._max_altitude, telemetry.altitude)

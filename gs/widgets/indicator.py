@@ -100,8 +100,8 @@ class IndicatorCard(QFrame):
         layout.addLayout(body, 1)
 
     # ------------------------------------------------------------------ API
-    def set_value(self, value) -> None:
-        """Actualiza la lectura; admito ``None`` para estado 'sin datos'."""
+    def set_value(self, value, status_text: str | None = None) -> None:
+        """Actualiza la lectura; admite ``None`` para estado 'sin datos'."""
         if value is None:
             self._value = None
             self._value_label.setText("--.-")
@@ -115,7 +115,8 @@ class IndicatorCard(QFrame):
         self._value_label.setText(text)
 
         critical = self._evaluate(self._value)
-        self._status.setText("ALERTA" if critical else "nominal")
+        default_status = "ALERTA" if critical else "nominal"
+        self._status.setText(status_text if status_text is not None else default_status)
         self._status.setStyleSheet(
             f"color: {Colors.ERROR if critical else Colors.TEXT_FAINT};"
         )

@@ -241,7 +241,8 @@ function connect(){
     el("v-acc").textContent  = (d.accel_ms2 >= 0 ? "+" : "") + d.accel_ms2.toFixed(2);
     el("v-temp").textContent = d.temperature_c.toFixed(1);
     el("v-pres").textContent = d.pressure_hpa.toFixed(1);
-    el("v-vol").textContent  = d.voltage_v.toFixed(2) + " V";
+    const batPct = Math.max(0, Math.min(100, Math.round((d.voltage_v - 6.5) / 2.5 * 100)));
+    el("v-vol").textContent  = `${d.voltage_v.toFixed(2)} V (${batPct}%)`;
     el("v-pkt").textContent  = "pkt " + d.packet;
     el("v-state").textContent = STATES[d.state] || ("S" + d.state);
     el("v-att").textContent  = `P ${d.pitch_deg.toFixed(1)} · R ${d.roll_deg.toFixed(1)} · Y ${d.yaw_deg.toFixed(1)}`;
