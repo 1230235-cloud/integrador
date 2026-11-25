@@ -31,7 +31,7 @@ MAX_SAMPLES = 1500
 #: Intervalo mínimo (s) entre muestras dibujadas (25 Hz para caída de 2.5 s).
 SAMPLE_DT = 0.04
 #: Altitud nominal de apertura del autogiro (m, perfil de prueba 30 m).
-ALT_DESPLEGUE = 24.0
+ALT_DESPLEGUE = 28.0
 
 
 class TelemetryPlots(Panel):

@@ -413,7 +413,7 @@ def _attitude_readout(parent: QWidget):
 class AttitudeIndicator(Panel):
     """Indicador de actitud con backend 3D (OpenGL) o 2D (respaldo)."""
 
-    def __init__(self, parent: QWidget | None = None, deploy_limit_m: float = 24.0) -> None:
+    def __init__(self, parent: QWidget | None = None, deploy_limit_m: float = 28.0) -> None:
         super().__init__("ACTITUD · CANSAT 3D", parent)
         self.deploy_limit_m = float(deploy_limit_m)
 

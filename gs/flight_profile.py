@@ -42,7 +42,7 @@ class MissionConfig:
     """Parámetros del perfil (prueba de caída desde 30 m con despliegue a 24 m)."""
 
     alt_suelta: float = 30.0
-    alt_despliegue: float = 24.0
+    alt_despliegue: float = 28.0
     v_ascenso: float = 3.0
     v_autogiro: float = 4.7
     v_terminal_libre: float = 41.0

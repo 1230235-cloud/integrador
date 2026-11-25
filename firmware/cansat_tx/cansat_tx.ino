@@ -122,10 +122,10 @@ static_assert(sizeof(TelemetryFrame) == 30, "TelemetryFrame debe medir 30 bytes"
   constexpr uint32_t ASCENT_HOLD_MS     = 600;
   constexpr uint32_t APOGEE_HOLD_MS     = 250;
   constexpr float ALT_MIN_ARM_M         = 12.0f;  // Arma al superar 12 m
-  constexpr float ALT_DEPLOY_TARGET_M   = 24.0f;  // Despliega apenas inicia la caída desde 30 m
-  constexpr float ALT_FORCE_DEPLOY_M    = 18.0f;  // Respaldo forzado si aún no abrió
-  constexpr float VEL_FALL_TRIGGER_MS   = -1.5f;
-  constexpr float DEPLOY_MARGIN_M       = 1.5f;
+  constexpr float ALT_DEPLOY_TARGET_M   = 28.0f;  // Despliega a 28 m en caída desde ~30 m
+  constexpr float ALT_FORCE_DEPLOY_M    = 24.0f;  // Respaldo forzado si aún no abrió
+  constexpr float VEL_FALL_TRIGGER_MS   = -1.2f;
+  constexpr float DEPLOY_MARGIN_M       = 1.0f;
 #else
   // Perfil oficial PEUUM: suelta a 450 m, despliegue de autogiro a 200 m
   constexpr const char *FLIGHT_MODE_TAG = "450M";

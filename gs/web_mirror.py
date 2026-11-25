@@ -96,7 +96,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 
 <section class="panels">
   <div class="panel">
-    <h2><span>PERFIL DE ALTITUD (LÍNEA 24 m)</span><span id="v-state">PRE-LANZAMIENTO</span></h2>
+    <h2><span>PERFIL DE ALTITUD (LÍNEA 28 m)</span><span id="v-state">PRE-LANZAMIENTO</span></h2>
     <canvas id="chart"></canvas>
   </div>
   <div class="panel">
@@ -107,7 +107,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 
 <script>
 const STATES = ["PRE-LANZAMIENTO","ASCENSO","DESCENSO","ATERRIZAJE","FIN DE MISIÓN"];
-const DEPLOY_LIMIT_M = 24.0;
+const DEPLOY_LIMIT_M = 28.0;
 const history = [];
 let maxAlt = 0;
 let latest = {pitch:0, roll:0, yaw:0, decoupled:false};
@@ -137,11 +137,11 @@ function drawChart(){
     ctx.fillText((maxY*(1-i/4)).toFixed(0)+"m", 4, y+4);
   }
 
-  // Línea de despliegue 24 m
-  const y24 = pad.t + ph * (1 - DEPLOY_LIMIT_M / maxY);
+  // Línea de despliegue 28 m
+  const y28 = pad.t + ph * (1 - DEPLOY_LIMIT_M / maxY);
   ctx.save(); ctx.setLineDash([5,4]); ctx.strokeStyle = "#c98a42";
-  ctx.beginPath(); ctx.moveTo(pad.l, y24); ctx.lineTo(w-pad.r, y24); ctx.stroke();
-  ctx.fillStyle = "#c98a42"; ctx.fillText("24m", w-pad.r-30, y24-4);
+  ctx.beginPath(); ctx.moveTo(pad.l, y28); ctx.lineTo(w-pad.r, y28); ctx.stroke();
+  ctx.fillStyle = "#c98a42"; ctx.fillText("28m", w-pad.r-30, y28-4);
   ctx.restore();
 
   if(history.length < 2) return;
