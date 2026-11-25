@@ -117,6 +117,7 @@ class ControlPanel(Panel):
         self.action_combo.setFixedHeight(32)
         self.action_combo.setToolTip("Selecciona un comando de misión y pulsa ▶")
         self.action_combo.addItem("Calibrar barómetro", protocol.CMD_CALIBRATE)
+        self.action_combo.addItem("Probar servo (GPIO 5)", protocol.CMD_TEST_SERVO)
         self.action_combo.addItem("Desplegar autogiro", protocol.CMD_DEPLOY_PARENT)
         self.action_combo.addItem("Reiniciar misión", protocol.CMD_RECOVER)
         self.action_combo.addItem("Abortar despliegue", protocol.CMD_CUT_PARACHUTE)

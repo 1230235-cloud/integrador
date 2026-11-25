@@ -48,6 +48,7 @@ EVENT_PREFIX = "E"
 
 #: Comandos hacia el CanSat (tramas de cable del firmware).
 CMD_CALIBRATE = "C,CAL,1"
+CMD_TEST_SERVO = "C,SERVO,TEST"
 CMD_INJECTION = "C,INJ,1"          # reservado: sin efecto en esta misión
 CMD_DEPLOY_PARENT = "C,DEP,DEPLOY"
 CMD_CUT_PARACHUTE = "C,CHUTE,CUT"
@@ -56,6 +57,7 @@ CMD_RECOVER = "C,SYS,RESET"
 #: Comandos expuestos como botones en el panel de control.
 COMMANDS: dict = {
     "Calibrar barómetro": CMD_CALIBRATE,
+    "Probar servo (GPIO 5)": CMD_TEST_SERVO,
     "Desplegar autogiro": CMD_DEPLOY_PARENT,
     "Abortar despliegue": CMD_CUT_PARACHUTE,
     "Reiniciar misión": CMD_RECOVER,

@@ -333,6 +333,13 @@ static void deployAutogyro() {
   chuteDeployed = true;
 }
 
+static void testServo() {
+  // Prueba en banco sin armar ni marcar despliegue de misión: abre y vuelve a cerrar
+  servoWriteAngle(SERVO_ANGLE_OPEN);
+  delay(700);
+  servoWriteAngle(SERVO_ANGLE_CLOSED);
+}
+
 // ============================================================================
 // LECTURA DE SENSORES Y MÁQUINA DE ESTADOS
 // ============================================================================
@@ -465,6 +472,8 @@ static void handleGroundCommand(const String &cmd) {
   if (cmd.indexOf("CAL") >= 0) {
     calibrateBarometer();
     tareImuFromCurrent();
+  } else if (cmd.indexOf("SERVO") >= 0 || cmd.indexOf("TEST") >= 0) {
+    testServo();
   } else if (cmd.indexOf("DEP") >= 0) {
     deployAutogyro();
   } else if (cmd.indexOf("CUT") >= 0 || cmd.indexOf("ABORT") >= 0) {
@@ -505,9 +514,9 @@ static void transmitTelemetry(uint32_t nowMs) {
 
   radio.transmit(reinterpret_cast<uint8_t *>(&f), sizeof(f));
 
-  // Escuchar comandos solo en tierra (PRE/LANDED) para no frenar la caída libre
-  if ((missionState == STATE_PRE || missionState == STATE_LANDED) &&
-      (packetCounter % 3 == 0)) {
+  // Escuchar comandos solo en tierra (PRE/LANDED) para no frenar la caída libre.
+  // A BW 500 kHz / SF7 la ventana dura ~26 ms, haciendo el test de servo muy ágil.
+  if (missionState == STATE_PRE || missionState == STATE_LANDED) {
     String rxCmd;
     if (radio.receive(rxCmd) == RADIOLIB_ERR_NONE && rxCmd.length() > 0) {
       handleGroundCommand(rxCmd);
